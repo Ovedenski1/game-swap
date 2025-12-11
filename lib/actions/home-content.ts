@@ -71,6 +71,7 @@ export async function getLatestRatingsForHome(): Promise<NewsItem[]> {
     img: r.img,
     badge: r.score.toFixed(1),
     subtitle: r.subtitle ?? undefined,
-    href: `/ratings/${r.id}`, // 👈 NEW: click opens rating detail page
+    // use slug if present, otherwise fall back to id
+    href: `/ratings/${r.slug ?? r.id}`,
   }));
 }

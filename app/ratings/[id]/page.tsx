@@ -57,54 +57,61 @@ type ReviewBlock =
   | { [key: string]: any };
 
 /* ------------------------------------------------------------------ */
-/* Shared helpers                                                     */
+/* Fetch helper – try slug first, then id                             */
 /* ------------------------------------------------------------------ */
 
-function looksLikeUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
+const ratingSelectColumns = `
+  id,
+  slug,
+  game_title,
+  score,
+  summary,
+  image_url,
+  developer,
+  publisher,
+  release_date,
+  platforms,
+  genres,
+  hours_main,
+  hours_main_plus,
+  hours_completionist,
+  hours_all_styles,
+  trailer_url,
+  gallery_images,
+  review_body,
+  reviewer_name,
+  reviewer_avatar_url,
+  verdict_label,
+  created_at
+`;
 
 async function fetchRatingByIdOrSlug(idOrSlug: string) {
   const supabase = await createClient();
+  const value = decodeURIComponent(idOrSlug);
 
-  const baseSelect = supabase
+  // 1) Try by slug
+  let { data, error } = await supabase
     .from("ratings")
-    .select(
-      `
-      id,
-      slug,
-      game_title,
-      score,
-      img,
-      summary,
-      developer,
-      publisher,
-      release_date,
-      platforms,
-      genres,
-      hours_main,
-      hours_main_plus,
-      hours_completionist,
-      hours_all_styles,
-      trailer_url,
-      gallery_images,
-      review_body,
-      reviewer_name,
-      reviewer_avatar_url,
-      verdict_label,
-      created_at
-    `,
-    );
+    .select(ratingSelectColumns)
+    .eq("slug", value)
+    .maybeSingle();
 
-  const isUuid = looksLikeUuid(idOrSlug);
-  const query = isUuid
-    ? baseSelect.eq("id", idOrSlug)
-    : baseSelect.eq("slug", idOrSlug);
+  if (error) {
+    return { data: null, error };
+  }
 
-  const { data, error } = await query.maybeSingle();
-  return { data, error };
+  if (data) {
+    return { data, error: null };
+  }
+
+  // 2) Fallback: try by id
+  const { data: byId, error: errorById } = await supabase
+    .from("ratings")
+    .select(ratingSelectColumns)
+    .eq("id", value)
+    .maybeSingle();
+
+  return { data: byId ?? null, error: errorById ?? null };
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,7 +147,7 @@ export async function generateMetadata(
   const pathSegment = (data.slug as string | null) ?? String(data.id);
   const canonicalUrl = `${baseUrl}/ratings/${pathSegment}`;
 
-  const coverImage = (data.img as string | null) ?? null;
+  const coverImage = (data.image_url as string | null) ?? null;
 
   return {
     title: fullTitle,
@@ -213,7 +220,7 @@ function cardVariantClasses(variant: string | undefined) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Block renderer (like news)                                         */
+/* Block renderer                                                     */
 /* ------------------------------------------------------------------ */
 
 function renderBlock(block: ReviewBlock, index: number) {
@@ -439,7 +446,7 @@ function renderBlock(block: ReviewBlock, index: number) {
             </h3>
           )}
           {body && (
-            <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
+            <div className="text-xs sm:text-sm text.white/80 mb-1 whitespace-pre-wrap break-all">
               <div dangerouslySetInnerHTML={{ __html: body }} />
             </div>
           )}
@@ -552,8 +559,9 @@ export default async function RatingDetailPage({ params }: PageProps) {
     : "";
 
   const coverImage =
-    (data.img as string | null) && (data.img as string).trim() !== ""
-      ? (data.img as string)
+    (data.image_url as string | null) &&
+    (data.image_url as string).trim() !== ""
+      ? (data.image_url as string)
       : null;
 
   const score = data.score as number;
@@ -588,40 +596,34 @@ export default async function RatingDetailPage({ params }: PageProps) {
   const reviewerAvatar =
     (data.reviewer_avatar_url as string | null) || "/default.jpg";
 
-  /* ---------- parse review_body as blocks (JSON like news) ---------- */
+  /* ---------- parse review_body: JSON blocks OR plain text ---------- */
 
   let blocks: ReviewBlock[] = [];
-  let fallbackBodyText = "";
+  const rawBody = data.review_body as string | null;
 
-  const rawBody = data.review_body as any;
-
-  if (Array.isArray(rawBody)) {
-    blocks = rawBody as ReviewBlock[];
-  } else if (typeof rawBody === "string" && rawBody.trim()) {
+  if (rawBody && rawBody.trim()) {
+    // Try JSON (new editor format)
     try {
       const parsed = JSON.parse(rawBody);
       if (Array.isArray(parsed)) {
         blocks = parsed as ReviewBlock[];
       } else {
-        fallbackBodyText = rawBody;
+        throw new Error("not array");
       }
     } catch {
-      fallbackBodyText = rawBody;
+      // Fallback: treat as plain text paragraphs (old format)
+      const paragraphs = rawBody
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      blocks = paragraphs.map(
+        (p): ReviewBlock => ({
+          type: "paragraph",
+          text: p.replace(/\n/g, "<br />"),
+        }),
+      );
     }
-  }
-
-  if (!blocks.length && fallbackBodyText.trim()) {
-    const paragraphs = fallbackBodyText
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-    blocks = paragraphs.map(
-      (p): ReviewBlock => ({
-        type: "paragraph",
-        text: p.replace(/\n/g, "<br />"),
-      }),
-    );
   }
 
   return (
@@ -752,7 +754,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
                             : "--"}
                         </p>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
+                      <div className="rounded-xl border border.white/10 bg-black/70 px-2 py-2">
                         <p className="text-[10px] uppercase text-white/50">
                           Story + sides
                         </p>
@@ -763,7 +765,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
                         </p>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">
+                        <p className="text-[10px] uppercase text.white/50">
                           Completionist
                         </p>
                         <p className="mt-1 text-sm font-semibold">
@@ -773,7 +775,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
                         </p>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">
+                        <p className="text-[10px] uppercase text.white/50">
                           All styles
                         </p>
                         <p className="mt-1 text-sm font-semibold">
@@ -907,8 +909,9 @@ export default async function RatingDetailPage({ params }: PageProps) {
                       </h2>
                       <div className="space-y-3">
                         {sidebarRatings.map((r) => (
-                          <div
+                          <Link
                             key={r.id}
+                            href={`/ratings/${r.slug || r.id}`}
                             className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                           >
                             <div className="relative w-16 h-16 flex-shrink-0">
@@ -935,7 +938,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
                                 {r.score.toFixed(1)}
                               </span>
                             </div>
-                          </div>
+                          </Link>
                         ))}
                       </div>
                     </div>
@@ -995,8 +998,9 @@ export default async function RatingDetailPage({ params }: PageProps) {
                     </h2>
                     <div className="space-y-3">
                       {sidebarRatings.map((r) => (
-                        <div
+                        <Link
                           key={r.id}
+                          href={`/ratings/${r.slug || r.id}`}
                           className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                         >
                           <div className="relative w-16 h-16 flex-shrink-0">
@@ -1023,7 +1027,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
                               {r.score.toFixed(1)}
                             </span>
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   </div>
