@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* ====== GLOBAL COLOR VARIABLES (anime style) ====== */
+
+:root {
+  /* main app background + text */
+  --background: #06081f;       /* deep navy */
+  --foreground: #e5e7f5;       /* soft light text */
+
+  /* cards / panels / borders */
+  --surface: #13162b;
+  --surface-soft: #191d32;
+  --border: #272a45;
+
+   /* NEW: navbar + footer strip colors */
+  --navbar: #0a0d2a;   /* slightly darker band at top */
+  --footer: #050618;   /* very dark band at bottom */
+
+  /* accents */
+  --accent-primary: #ff4fa3;   /* pink */
+  --accent-primary-soft: #ff76b8;
+  --accent-purple: #5b4fff;
+  --accent-green: #24e38a;
+  --accent-yellow: #ffc857;
+  --accent-red: #ff4f6e;
+
+  --text-soft: #b5b9d9;
+  --text-muted: #7b80a8;
+}
+
+/* Optional: light mode by OS setting.
+   If you want ONLY dark mode, you can delete this block. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+    --surface: #f8fafc;
+    --surface-soft: #e5e7eb;
+    --border: #d4d4d8;
+    --text-soft: #4b5563;
+    --text-muted: #6b7280;
+  }
+}
+
+/* ====== Tailwind theme tokens (no extra config file) ====== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
+  --color-border: var(--border);
+
+  --color-navbar: var(--navbar);   /* 👈 add this */
+  --color-footer: var(--footer);   /* 👈 and this */
+
+  --color-primary: var(--accent-primary);
+  --color-primary-soft: var(--accent-primary-soft);
+  --color-purple: var(--accent-purple);
+  --color-green: var(--accent-green);
+  --color-yellow: var(--accent-yellow);
+  --color-red: var(--accent-red);
+
+  --color-text-soft: var(--text-soft);
+  --color-text-muted: var(--text-muted);
+}
+
+/* ====== base body ====== */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+/* ====== your custom utilities (kept) ====== */
+
+@layer components {
+  .card-swipe {
+    @apply relative overflow-hidden rounded-2xl shadow-lg bg-surface text-foreground;
+  }
+
+  .match-button {
+    @apply bg-gradient-to-r from-primary to-primary-soft text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-200;
+  }
+
+  .chat-container {
+    @apply bg-surface-soft rounded-lg shadow-sm border border-border;
+  }
+
+  .chat-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  .chat-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .chat-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .chat-scrollbar::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
+  .chat-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+}
+
+/* === thin horizontal scrollbar === */
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* hide scrollbar */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
