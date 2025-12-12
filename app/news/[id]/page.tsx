@@ -2,7 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { notFound } from "next/navigation";
+import { notFound, redirect  } from "next/navigation";
 import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
@@ -234,6 +234,12 @@ export default async function NewsArticlePage({ params }: PageProps) {
   if (error || !data) {
     console.error("news page error", error);
     notFound();
+  }
+
+  // ⭐ If the URL uses the raw id but the story has a slug,
+  // redirect to the canonical slug URL
+  if (id === String(data.id) && data.slug) {
+    redirect(`/news/${data.slug}`);
   }
 
   const articleId = data.id as string;

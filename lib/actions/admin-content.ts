@@ -30,6 +30,54 @@ function slugify(input: string): string {
     .replace(/-+/g, "-");
 }
 
+/**
+ * Make sure a slug is unique inside a given table.
+ * If the slug already exists, it will append -2, -3, ... etc.
+ *
+ * Example: "fallout-4", "fallout-4-2", "fallout-4-3"
+ */
+async function ensureUniqueSlug(
+  supabase: any,
+  table: "ratings" | "top_stories",
+  baseSlug: string | null,
+  currentId?: string | number,
+): Promise<string | null> {
+  if (!baseSlug) return null;
+
+  const base = baseSlug;
+  let candidate = baseSlug;
+  let suffix = 1;
+
+  while (true) {
+    let query = supabase
+      .from(table)
+      .select("id")
+      .eq("slug", candidate)
+      .limit(1);
+
+    if (currentId != null) {
+      query = query.neq("id", currentId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("ensureUniqueSlug error", error);
+      // fall back to candidate; DB unique constraint will still protect us
+      return candidate;
+    }
+
+    if (!data || data.length === 0) {
+      // no conflict → safe to use
+      return candidate;
+    }
+
+    // conflict → try with suffix
+    suffix += 1; // first conflict becomes -2
+    candidate = `${base}-${suffix}`;
+  }
+}
+
 /* ---------- mappers ---------- */
 
 function mapStoryRow(row: any): NewsItem {
@@ -121,8 +169,18 @@ export async function adminCreateStory(input: AdminStoryInput) {
   const supabase = await createClient();
 
   const baseTitle = (input.title || "").trim();
-  const effectiveSlug =
+
+  // 1) create base slug (either from input.slug or from title)
+  const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
+
+  // 2) make sure it is unique in "top_stories"
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase,
+    "top_stories",
+    baseSlug,
+  );
+
   const effectiveMetaTitle =
     (input.metaTitle && input.metaTitle.trim()) || baseTitle || null;
   const effectiveMetaDescription =
@@ -174,8 +232,19 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
   const supabase = await createClient();
 
   const baseTitle = (input.title || "").trim();
-  const effectiveSlug =
+
+  // 1) create base slug
+  const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
+
+  // 2) ensure unique, but ignore this current row's id
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase,
+    "top_stories",
+    baseSlug,
+    id,
+  );
+
   const effectiveMetaTitle =
     (input.metaTitle && input.metaTitle.trim()) || baseTitle || null;
   const effectiveMetaDescription =
@@ -341,9 +410,18 @@ export async function adminCreateRating(input: AdminRatingInput) {
   const supabase = await createClient();
 
   const baseTitle = (input.game_title || "").trim();
-  const effectiveSlug =
+
+  // 1) base slug from input or title
+  const baseSlug =
     (input.slug && input.slug.trim()) ||
     (baseTitle ? slugify(baseTitle) : null);
+
+  // 2) ensure unique in "ratings"
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase,
+    "ratings",
+    baseSlug,
+  );
 
   const { data, error } = await supabase
     .from("ratings")
@@ -392,9 +470,19 @@ export async function adminUpdateRating(
   const supabase = await createClient();
 
   const baseTitle = (input.game_title || "").trim();
-  const effectiveSlug =
+
+  // 1) base slug from input or title
+  const baseSlug =
     (input.slug && input.slug.trim()) ||
     (baseTitle ? slugify(baseTitle) : null);
+
+  // 2) ensure unique, ignoring this rating's own id
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase,
+    "ratings",
+    baseSlug,
+    id,
+  );
 
   const { data, error } = await supabase
     .from("ratings")
@@ -446,7 +534,6 @@ export async function adminDeleteRating(id: string) {
     throw new Error(error?.message || "Failed to delete rating");
   }
 }
-
 
 /* =========================================================================
  * HERO SLIDES (carousel)

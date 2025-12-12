@@ -1,13 +1,14 @@
 // app/ratings/[id]/page.tsx
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
 import { adminGetRatings } from "@/lib/actions/admin-content";
 import StoryGallery from "@/components/StoryGallery";
 import { SocialEmbed } from "@/components/SocialEmbed";
+import { PlatformIcons } from "@/components/PlatformIcons";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -24,6 +25,7 @@ type CardWidth = "narrow" | "full";
 type EmbedSize = "default" | "wide" | "compact";
 
 type ReviewBlock =
+  | { id?: string; type: "media" }
   | { id?: string; type: "paragraph"; text: string }
   | { id?: string; type: "heading"; level: 2 | 3; text: string }
   | { id?: string; type: "image"; url: string; caption?: string }
@@ -57,70 +59,57 @@ type ReviewBlock =
   | { [key: string]: any };
 
 /* ------------------------------------------------------------------ */
-/* Fetch helper – try slug first, then id                             */
+/* Fetch helper – id OR slug                                          */
 /* ------------------------------------------------------------------ */
 
-const ratingSelectColumns = `
-  id,
-  slug,
-  game_title,
-  score,
-  summary,
-  image_url,
-  developer,
-  publisher,
-  release_date,
-  platforms,
-  genres,
-  hours_main,
-  hours_main_plus,
-  hours_completionist,
-  hours_all_styles,
-  trailer_url,
-  gallery_images,
-  review_body,
-  reviewer_name,
-  reviewer_avatar_url,
-  verdict_label,
-  created_at
-`;
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 
 async function fetchRatingByIdOrSlug(idOrSlug: string) {
   const supabase = await createClient();
-  const value = decodeURIComponent(idOrSlug);
 
-  // 1) Try by slug
-  let { data, error } = await supabase
+  const baseSelect = supabase
     .from("ratings")
-    .select(ratingSelectColumns)
-    .eq("slug", value)
-    .maybeSingle();
+    .select(
+      `
+      id,
+      slug,
+      game_title,
+      score,
+      summary,
+      image_url,
+      developer,
+      publisher,
+      release_date,
+      platforms,
+      genres,
+      hours_main,
+      hours_main_plus,
+      hours_completionist,
+      hours_all_styles,
+      trailer_url,
+      gallery_images,
+      review_body,
+      reviewer_name,
+      reviewer_avatar_url,
+      verdict_label,
+      created_at
+    `,
+    );
 
-  if (error) {
-    return { data: null, error };
-  }
+  const isUuid = looksLikeUuid(idOrSlug);
+  const query = isUuid ? baseSelect.eq("id", idOrSlug) : baseSelect.eq("slug", idOrSlug);
 
-  if (data) {
-    return { data, error: null };
-  }
-
-  // 2) Fallback: try by id
-  const { data: byId, error: errorById } = await supabase
-    .from("ratings")
-    .select(ratingSelectColumns)
-    .eq("id", value)
-    .maybeSingle();
-
-  return { data: byId ?? null, error: errorById ?? null };
+  const { data, error } = await query.maybeSingle();
+  return { data, error };
 }
 
 /* ------------------------------------------------------------------ */
 /* Metadata                                                           */
 /* ------------------------------------------------------------------ */
 
-export async function generateMetadata(
-  { params }: PageProps,
-): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const resolvedParams = params instanceof Promise ? await params : params;
   const { id } = resolvedParams;
 
@@ -142,8 +131,7 @@ export async function generateMetadata(
     (data.verdict_label as string | null) ??
     "Game reviews and ratings on GameLink.";
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const pathSegment = (data.slug as string | null) ?? String(data.id);
   const canonicalUrl = `${baseUrl}/ratings/${pathSegment}`;
 
@@ -159,14 +147,7 @@ export async function generateMetadata(
       url: canonicalUrl,
       type: "article",
       siteName,
-      images: coverImage
-        ? [
-            {
-              url: coverImage,
-              alt: rawTitle,
-            },
-          ]
-        : undefined,
+      images: coverImage ? [{ url: coverImage, alt: rawTitle }] : undefined,
     },
     twitter: {
       card: "summary_large_image",
@@ -186,9 +167,7 @@ function getYouTubeEmbedUrl(url: string | undefined): string | null {
   try {
     const u = new URL(url);
     if (u.hostname === "youtu.be" || u.hostname.endsWith("youtube.com")) {
-      if (u.hostname === "youtu.be") {
-        return `https://www.youtube.com/embed${u.pathname}`;
-      }
+      if (u.hostname === "youtu.be") return `https://www.youtube.com/embed${u.pathname}`;
       const v = u.searchParams.get("v");
       if (v) return `https://www.youtube.com/embed/${v}`;
       if (u.pathname.startsWith("/embed/")) return url;
@@ -219,21 +198,49 @@ function cardVariantClasses(variant: string | undefined) {
   }
 }
 
+function splitByMedia(blocks: ReviewBlock[]) {
+  const idx = blocks.findIndex((b) => b?.type === "media");
+  const before = idx >= 0 ? blocks.slice(0, idx).filter((b) => b?.type !== "media") : [];
+  const after =
+    idx >= 0 ? blocks.slice(idx + 1).filter((b) => b?.type !== "media") : blocks.filter((b) => b?.type !== "media");
+  const hasMarker = idx >= 0;
+  return { before, after, hasMarker };
+}
+
+// ✅ NEW: helpers to avoid duplicate summary paragraph
+function stripHtml(html: string) {
+  return (html || "").replace(/<[^>]*>/g, " ");
+}
+
+function normalizeText(s: string) {
+  return (s || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function trimTrailingEllipsis(s: string) {
+  return (s || "").replace(/[.…]+$/g, "").trim();
+}
+
 /* ------------------------------------------------------------------ */
-/* Block renderer                                                     */
+/* Block renderer (non-media)                                         */
 /* ------------------------------------------------------------------ */
 
 function renderBlock(block: ReviewBlock, index: number) {
   const key = (block as any).id ?? index;
 
   switch (block.type) {
+    case "media":
+      return null;
+
     case "heading": {
       const level = (block as any).level ?? 2;
       const text = (block as any).text ?? "";
       if (!text) return null;
 
-      const baseClasses =
-        "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
+      const baseClasses = "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
       const h2Classes = "text-2xl sm:text-[26px]";
       const h3Classes = "text-xl sm:text-[20px]";
 
@@ -269,10 +276,7 @@ function renderBlock(block: ReviewBlock, index: number) {
       if (!url) return null;
 
       return (
-        <figure
-          key={key}
-          className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40"
-        >
+        <figure key={key} className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
           <div className="relative w-full aspect-[16/9]">
             <Image
               src={url}
@@ -308,20 +312,14 @@ function renderBlock(block: ReviewBlock, index: number) {
       const url = (block as any).url ?? "";
       const embedTitle = (block as any).title ?? "";
       const size = (block as any).size as EmbedSize | undefined;
-
       if (!url) return null;
-
-      return (
-        <SocialEmbed key={key} url={url} title={embedTitle} size={size} />
-      );
+      return <SocialEmbed key={key} url={url} title={embedTitle} size={size} />;
     }
 
     case "gallery": {
       const b: any = block;
       const title = b.title ?? "";
-      const images = Array.isArray(b.images)
-        ? b.images.filter((img: any) => img && img.url)
-        : [];
+      const images = Array.isArray(b.images) ? b.images.filter((img: any) => img && img.url) : [];
       const withBackground = b.withBackground ?? false;
 
       if (!images.length) return null;
@@ -334,11 +332,7 @@ function renderBlock(block: ReviewBlock, index: number) {
 
       return (
         <div key={key} className="mt-6 space-y-2">
-          {title && (
-            <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">
-              {title}
-            </h3>
-          )}
+          {title && <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">{title}</h3>}
           <StoryGallery images={galleryImages} withBackground={withBackground} />
         </div>
       );
@@ -356,21 +350,15 @@ function renderBlock(block: ReviewBlock, index: number) {
       const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
 
       const layout: CardLayout =
-        b.layout === "mediaBottom" ||
-        b.layout === "mediaLeft" ||
-        b.layout === "mediaRight"
+        b.layout === "mediaBottom" || b.layout === "mediaLeft" || b.layout === "mediaRight"
           ? b.layout
           : "mediaTop";
 
       const videoUrl = b.videoUrl as string | undefined;
-      const embedUrl =
-        mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
+      const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
 
-      const imageUrls: string[] = Array.isArray(b.imageUrls)
-        ? b.imageUrls.filter(Boolean)
-        : [];
-      const imageLayout: "row" | "grid" =
-        b.imageLayout === "grid" ? "grid" : "row";
+      const imageUrls: string[] = Array.isArray(b.imageUrls) ? b.imageUrls.filter(Boolean) : [];
+      const imageLayout: "row" | "grid" = b.imageLayout === "grid" ? "grid" : "row";
 
       if (!title && !body && !imageUrls.length && !embedUrl) return null;
 
@@ -386,16 +374,9 @@ function renderBlock(block: ReviewBlock, index: number) {
             />
           </div>
         ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
-          <div
-            className={
-              imageLayout === "grid"
-                ? "grid grid-cols-3 gap-3"
-                : "flex gap-3"
-            }
-          >
+          <div className={imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"}>
             {imageUrls.map((url, imgIndex) => {
               const modalId = `card-modal-${index}-${imgIndex}`;
-
               return (
                 <div key={modalId} className="relative aspect-square w-full">
                   <input type="checkbox" id={modalId} className="peer hidden" />
@@ -414,10 +395,7 @@ function renderBlock(block: ReviewBlock, index: number) {
                   </label>
 
                   <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
-                    <label
-                      htmlFor={modalId}
-                      className="absolute inset-0 cursor-zoom-out"
-                    />
+                    <label htmlFor={modalId} className="absolute inset-0 cursor-zoom-out" />
                     <div className="relative z-50 max-w-4xl w-full">
                       <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
                         <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
@@ -440,13 +418,9 @@ function renderBlock(block: ReviewBlock, index: number) {
 
       const textSection = (
         <>
-          {title && (
-            <h3 className="text-sm font-semibold text-white mb-1 break-words">
-              {title}
-            </h3>
-          )}
+          {title && <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>}
           {body && (
-            <div className="text-xs sm:text-sm text.white/80 mb-1 whitespace-pre-wrap break-all">
+            <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
               <div dangerouslySetInnerHTML={{ __html: body }} />
             </div>
           )}
@@ -465,7 +439,6 @@ function renderBlock(block: ReviewBlock, index: number) {
       );
 
       let inner;
-
       if (layout === "mediaLeft" || layout === "mediaRight") {
         const floatClass =
           layout === "mediaRight"
@@ -480,19 +453,14 @@ function renderBlock(block: ReviewBlock, index: number) {
         );
       } else {
         inner = (
-          <div
-            className={`flex flex-col gap-3 ${
-              layout === "mediaBottom" ? "flex-col-reverse" : "flex-col"
-            }`}
-          >
+          <div className={`flex flex-col gap-3 ${layout === "mediaBottom" ? "flex-col-reverse" : ""}`}>
             {media && <div>{media}</div>}
             <div className="space-y-1">{textSection}</div>
           </div>
         );
       }
 
-      const widthClass =
-        cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
+      const widthClass = cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
 
       return (
         <div key={key} className={widthClass}>
@@ -502,12 +470,7 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "divider":
-      return (
-        <hr
-          key={key}
-          className="my-6 border-t border-white/10 rounded-full"
-        />
-      );
+      return <hr key={key} className="my-6 border-t border-white/10 rounded-full" />;
 
     default:
       return null;
@@ -529,6 +492,11 @@ export default async function RatingDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  // Redirect uuid -> slug
+  if (looksLikeUuid(id) && data.slug && data.slug !== id) {
+    redirect(`/ratings/${data.slug}`);
+  }
+
   const supabase = await createClient();
 
   const { data: moreStoriesRaw } = await supabase
@@ -544,8 +512,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
       title: row.title as string,
       subtitle: (row.subtitle as string | null) ?? undefined,
       img:
-        (row.image_url as string | null) &&
-        (row.image_url as string).trim() !== ""
+        (row.image_url as string | null) && (row.image_url as string).trim() !== ""
           ? (row.image_url as string)
           : null,
     })) ?? [];
@@ -554,34 +521,26 @@ export default async function RatingDetailPage({ params }: PageProps) {
   const sidebarRatings = allRatings.slice(0, 3);
 
   const gameTitle = data.game_title as string;
-  const createdDate = data.created_at
-    ? new Date(data.created_at as string).toLocaleDateString()
-    : "";
+  const createdDate = data.created_at ? new Date(data.created_at as string).toLocaleDateString() : "";
 
   const coverImage =
-    (data.image_url as string | null) &&
-    (data.image_url as string).trim() !== ""
+    (data.image_url as string | null) && (data.image_url as string).trim() !== ""
       ? (data.image_url as string)
       : null;
 
   const score = data.score as number;
-  const verdictLabel =
-    (data.verdict_label as string | null) ?? "Review";
+  const verdictLabel = (data.verdict_label as string | null) ?? "Review";
+
+  const summary = (data.summary as string | null) ?? null;
 
   const developer = (data.developer as string | null) ?? null;
   const publisher = (data.publisher as string | null) ?? null;
   const releaseDate = (data.release_date as string | null) ?? null;
 
-  const platforms = Array.isArray(data.platforms)
-    ? (data.platforms as string[])
-    : [];
-  const genres = Array.isArray(data.genres)
-    ? (data.genres as string[])
-    : [];
+  const platforms = Array.isArray(data.platforms) ? (data.platforms as string[]) : [];
+  const genres = Array.isArray(data.genres) ? (data.genres as string[]) : [];
 
-  const trailerEmbed = getYouTubeEmbedUrl(
-    (data.trailer_url as string | null) ?? undefined,
-  );
+  const trailerEmbed = getYouTubeEmbedUrl((data.trailer_url as string | null) ?? undefined);
 
   const rawGallery = (data.gallery_images as any[] | null) ?? [];
   const galleryImages = rawGallery
@@ -593,36 +552,38 @@ export default async function RatingDetailPage({ params }: PageProps) {
     }));
 
   const reviewerName = (data.reviewer_name as string | null) ?? null;
-  const reviewerAvatar =
-    (data.reviewer_avatar_url as string | null) || "/default.jpg";
+  const reviewerAvatar = (data.reviewer_avatar_url as string | null) || "/default.jpg";
 
-  /* ---------- parse review_body: JSON blocks OR plain text ---------- */
-
+  // Parse blocks
   let blocks: ReviewBlock[] = [];
   const rawBody = data.review_body as string | null;
 
   if (rawBody && rawBody.trim()) {
-    // Try JSON (new editor format)
     try {
       const parsed = JSON.parse(rawBody);
-      if (Array.isArray(parsed)) {
-        blocks = parsed as ReviewBlock[];
-      } else {
-        throw new Error("not array");
-      }
+      if (Array.isArray(parsed)) blocks = parsed as ReviewBlock[];
     } catch {
-      // Fallback: treat as plain text paragraphs (old format)
-      const paragraphs = rawBody
-        .split(/\n{2,}/)
-        .map((p) => p.trim())
-        .filter(Boolean);
+      // ignore
+    }
+  }
 
-      blocks = paragraphs.map(
-        (p): ReviewBlock => ({
-          type: "paragraph",
-          text: p.replace(/\n/g, "<br />"),
-        }),
-      );
+  const { before: blocksBeforeMediaRaw, after: blocksAfterMedia, hasMarker } = splitByMedia(blocks);
+
+  const shouldShowMedia = Boolean(trailerEmbed || galleryImages.length > 0);
+
+  // ✅ NEW: prevent duplicate summary block
+  let blocksBeforeMedia = blocksBeforeMediaRaw;
+
+  if (summary && summary.trim() && blocksBeforeMediaRaw.length > 0) {
+    const summaryCompare = normalizeText(trimTrailingEllipsis(summary));
+
+    const first = blocksBeforeMediaRaw[0];
+    if (first?.type === "paragraph") {
+      const firstText = normalizeText(stripHtml((first as any).text || ""));
+      // If the paragraph starts with the (possibly truncated) summary, skip it.
+      if (firstText && summaryCompare && firstText.startsWith(summaryCompare)) {
+        blocksBeforeMedia = blocksBeforeMediaRaw.slice(1);
+      }
     }
   }
 
@@ -641,8 +602,8 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
               <div className="grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 xl:gap-12">
                 {/* MAIN COLUMN */}
-                <section className="space-y-6">
-                  {/* HERO CARD */}
+                <section className="space-y-8">
+                  {/* HERO CARD + HLTB INSIDE */}
                   <div className="rounded-2xl border border-white/10 bg-black/40 p-4 sm:p-5 space-y-4">
                     <div className="flex flex-col gap-4 md:flex-row">
                       <div className="relative w-full md:w-[260px] aspect-[16/9] md:aspect-[4/3] rounded-xl overflow-hidden border border-white/15 bg-black/60">
@@ -663,50 +624,32 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
                       <div className="flex-1 flex flex-col justify-between gap-3 min-w-0">
                         <div className="space-y-2">
-                          <p className="text-[11px] uppercase tracking-wide text-white/60">
-                            {createdDate}
-                          </p>
-                          <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words">
-                            {gameTitle}
-                          </h1>
+                          <p className="text-[11px] uppercase tracking-wide text-white/60">{createdDate}</p>
+
+                          <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words">{gameTitle}</h1>
 
                           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/70">
                             {developer && (
                               <span className="break-all">
-                                <span className="text-white/50">
-                                  Developer:
-                                </span>{" "}
-                                {developer}
+                                <span className="text-white/50">Developer:</span> {developer}
                               </span>
                             )}
                             {publisher && (
                               <span className="break-all">
-                                <span className="text-white/50">
-                                  Publisher:
-                                </span>{" "}
-                                {publisher}
+                                <span className="text-white/50">Publisher:</span> {publisher}
                               </span>
                             )}
                             {releaseDate && (
                               <span className="break-all">
-                                <span className="text-white/50">
-                                  Release:
-                                </span>{" "}
-                                {releaseDate}
+                                <span className="text-white/50">Release:</span> {releaseDate}
                               </span>
                             )}
                           </div>
 
                           {(platforms.length > 0 || genres.length > 0) && (
                             <div className="mt-2 flex flex-wrap gap-2">
-                              {platforms.map((p) => (
-                                <span
-                                  key={`plat-${p}`}
-                                  className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] break-words"
-                                >
-                                  {p}
-                                </span>
-                              ))}
+                              {platforms.length > 0 && <PlatformIcons platforms={platforms} />}
+
                               {genres.map((g) => (
                                 <span
                                   key={`genre-${g}`}
@@ -721,78 +664,67 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
                         <div className="flex items-center gap-3">
                           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500 text-xl font-bold shadow-[0_0_30px_rgba(248,113,113,0.7)]">
-                            {typeof score === "number"
-                              ? score.toFixed(1)
-                              : "--"}
+                            {typeof score === "number" ? score.toFixed(1) : "--"}
                           </div>
                           <div className="text-[11px] text-white/70">
-                            <p className="text-[10px] uppercase tracking-wide">
-                              GameLink score
-                            </p>
-                            <p className="break-words">
-                              {verdictLabel || "Review"}
-                            </p>
+                            <p className="text-[10px] uppercase tracking-wide">GameLink score</p>
+                            <p className="break-words">{verdictLabel || "Review"}</p>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HLTB inside hero */}
+                    <div className="pt-3 border-t border-white/10">
+                      <h2 className="text-sm font-semibold mb-2">How long to beat</h2>
+
+                      <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-center text-[11px]">
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
+                          <p className="text-[10px] uppercase text-white/50">Main story</p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {data.hours_main != null ? `${data.hours_main} hrs` : "--"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
+                          <p className="text-[10px] uppercase text-white/50">Story + sides</p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {data.hours_main_plus != null ? `${data.hours_main_plus} hrs` : "--"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
+                          <p className="text-[10px] uppercase text-white/50">Completionist</p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {data.hours_completionist != null ? `${data.hours_completionist} hrs` : "--"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
+                          <p className="text-[10px] uppercase text-white/50">All styles</p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {data.hours_all_styles != null ? `${data.hours_all_styles} hrs` : "--"}
+                          </p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* HOW LONG TO BEAT */}
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
-                    <h2 className="text-sm font-semibold">
-                      How long to beat
-                    </h2>
-                    <div className="grid gap-2 grid-cols-2 md:grid-cols-4 text-center text-[11px]">
-                      <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">
-                          Main story
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">
-                          {data.hours_main != null
-                            ? `${data.hours_main} hrs`
-                            : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border.white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">
-                          Story + sides
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">
-                          {data.hours_main_plus != null
-                            ? `${data.hours_main_plus} hrs`
-                            : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text.white/50">
-                          Completionist
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">
-                          {data.hours_completionist != null
-                            ? `${data.hours_completionist} hrs`
-                            : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-black/70 px-2 py-2">
-                        <p className="text-[10px] uppercase text.white/50">
-                          All styles
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">
-                          {data.hours_all_styles != null
-                            ? `${data.hours_all_styles} hrs`
-                            : "--"}
-                        </p>
-                      </div>
+                  {/* SUMMARY FIRST */}
+                  {summary && summary.trim() && (
+                    <div className="space-y-2">
+                      <h2 className="text-sm font-semibold">Summary</h2>
+                      <p className="text-sm sm:text-base text-white/80 leading-relaxed whitespace-pre-wrap break-words">
+                        {summary}
+                      </p>
                     </div>
-                  </div>
+                  )}
 
-                  {/* MEDIA SECTION */}
-                  {(trailerEmbed || galleryImages.length > 0) && (
-                    <div className="space-y-3 rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
-                      <h2 className="text-sm font-semibold">
-                        Images & Screenshots
-                      </h2>
+                  {/* ✅ Blocks BEFORE media marker (after de-dupe) */}
+                  {hasMarker && blocksBeforeMedia.length > 0 && (
+                    <section className="space-y-3">{blocksBeforeMedia.map((b, idx) => renderBlock(b, idx))}</section>
+                  )}
+
+                  {/* ✅ MEDIA */}
+                  {shouldShowMedia && (
+                    <div className="space-y-3">
                       {trailerEmbed && (
                         <div className="w-full max-w-2xl mx-auto aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
                           <iframe
@@ -804,73 +736,44 @@ export default async function RatingDetailPage({ params }: PageProps) {
                           />
                         </div>
                       )}
-                      {galleryImages.length > 0 && (
-                        <StoryGallery
-                          images={galleryImages}
-                          withBackground
-                        />
-                      )}
+
+                      {galleryImages.length > 0 && <StoryGallery images={galleryImages} withBackground={false} />}
                     </div>
                   )}
 
-                  {/* REVIEW SECTION */}
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
-                    <h2 className="text-sm font-semibold">
-                      {verdictLabel || "Review"}
-                    </h2>
+                  {/* ✅ Blocks AFTER media marker */}
+                  {blocksAfterMedia.length > 0 && (
+                    <div className="space-y-3">
+                      <h2 className="text-sm font-semibold">{verdictLabel || "Review"}</h2>
+                      <section className="space-y-3">{blocksAfterMedia.map((b, idx) => renderBlock(b, idx))}</section>
+                    </div>
+                  )}
 
-                    {blocks.length === 0 ? (
-                      <p className="text-sm text-white/70">
-                        No review text has been added yet.
-                      </p>
-                    ) : (
-                      <section className="mt-1 space-y-3">
-                        {blocks.map((block, idx) => renderBlock(block, idx))}
-                      </section>
-                    )}
+                  {/* AUTHOR CARD */}
+                  {(reviewerName || reviewerAvatar) && (
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/40 bg-black flex-shrink-0">
+                          <Image src={reviewerAvatar} alt={reviewerName || "Author"} fill sizes="40px" className="object-cover" />
+                        </div>
 
-                    {(reviewerName || reviewerAvatar) && (
-                      <div className="mt-5 border-t border-white/10 pt-4">
-                        <div className="flex items-center gap-3">
-                          <div className="relative h-8 w-8 overflow-hidden rounded-full border border-white/40 bg-black flex-shrink-0">
-                            <Image
-                              src={reviewerAvatar}
-                              alt={reviewerName || "Reviewer"}
-                              fill
-                              sizes="32px"
-                              className="object-cover"
-                            />
-                          </div>
-                          <div className="text-[11px]">
-                            {reviewerName && (
-                              <p className="font-semibold break-words">
-                                {reviewerName}
-                              </p>
-                            )}
-                            <p className="text-white/60">
-                              GameLink reviewer
-                            </p>
-                          </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-wide text-white/60">Edited by</p>
+                          {reviewerName && <p className="text-sm font-semibold break-words">{reviewerName}</p>}
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </section>
 
                 {/* SIDEBAR (desktop) */}
                 <aside className="hidden space-y-6 lg:block">
                   {moreStories.length > 0 && (
                     <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                        More stories
-                      </h2>
+                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">More stories</h2>
                       <div className="space-y-3">
                         {moreStories.map((s) => (
-                          <Link
-                            key={s.id}
-                            href={`/news/${s.slug || s.id}`}
-                            className="flex gap-3 group"
-                          >
+                          <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                             <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                               {s.img ? (
                                 <Image
@@ -887,14 +790,8 @@ export default async function RatingDetailPage({ params }: PageProps) {
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                                {s.title}
-                              </p>
-                              {s.subtitle && (
-                                <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                  {s.subtitle}
-                                </p>
-                              )}
+                              <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
+                              {s.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>}
                             </div>
                           </Link>
                         ))}
@@ -904,9 +801,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
                   {sidebarRatings.length > 0 && (
                     <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                        Latest ratings
-                      </h2>
+                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Latest ratings</h2>
                       <div className="space-y-3">
                         {sidebarRatings.map((r) => (
                           <Link
@@ -915,23 +810,11 @@ export default async function RatingDetailPage({ params }: PageProps) {
                             className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                           >
                             <div className="relative w-16 h-16 flex-shrink-0">
-                              <Image
-                                src={r.img}
-                                alt={r.game_title}
-                                fill
-                                sizes="64px"
-                                className="object-cover"
-                              />
+                              <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                             </div>
                             <div className="flex-1 min-w-0 py-2 pr-3">
-                              <p className="text-xs font-semibold line-clamp-2">
-                                {r.game_title}
-                              </p>
-                              {r.subtitle && (
-                                <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                  {r.subtitle}
-                                </p>
-                              )}
+                              <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
+                              {r.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>}
                             </div>
                             <div className="px-2 pr-3">
                               <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
@@ -946,20 +829,14 @@ export default async function RatingDetailPage({ params }: PageProps) {
                 </aside>
               </div>
 
-              {/* MOBILE sidebar (below content) */}
+              {/* MOBILE sidebar */}
               <div className="mt-8 space-y-6 lg:hidden">
                 {moreStories.length > 0 && (
                   <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                      More stories
-                    </h2>
+                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">More stories</h2>
                     <div className="space-y-3">
                       {moreStories.map((s) => (
-                        <Link
-                          key={s.id}
-                          href={`/news/${s.slug || s.id}`}
-                          className="flex gap-3 group"
-                        >
+                        <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                           <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                             {s.img ? (
                               <Image
@@ -976,14 +853,8 @@ export default async function RatingDetailPage({ params }: PageProps) {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                              {s.title}
-                            </p>
-                            {s.subtitle && (
-                              <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                {s.subtitle}
-                              </p>
-                            )}
+                            <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
+                            {s.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>}
                           </div>
                         </Link>
                       ))}
@@ -993,9 +864,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
                 {sidebarRatings.length > 0 && (
                   <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                      Latest ratings
-                    </h2>
+                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Latest ratings</h2>
                     <div className="space-y-3">
                       {sidebarRatings.map((r) => (
                         <Link
@@ -1004,23 +873,11 @@ export default async function RatingDetailPage({ params }: PageProps) {
                           className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                         >
                           <div className="relative w-16 h-16 flex-shrink-0">
-                            <Image
-                              src={r.img}
-                              alt={r.game_title}
-                              fill
-                              sizes="64px"
-                              className="object-cover"
-                            />
+                            <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                           </div>
                           <div className="flex-1 min-w-0 py-2 pr-3">
-                            <p className="text-xs font-semibold line-clamp-2">
-                              {r.game_title}
-                            </p>
-                            {r.subtitle && (
-                              <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                {r.subtitle}
-                              </p>
-                            )}
+                            <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
+                            {r.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>}
                           </div>
                           <div className="px-2 pr-3">
                             <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
