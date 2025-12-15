@@ -70,7 +70,18 @@ export default async function AdminPage() {
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 py-8 text-white">
-      <h1 className="mb-6 text-3xl font-bold">Admin Dashboard</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+
+        {/* ✅ Step 3: Rentals inbox link */}
+        <a
+          href="/admin/rentals"
+          className="inline-flex items-center justify-center rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm font-semibold hover:bg-white/5"
+        >
+          Rentals
+        </a>
+      </div>
+
       <AdminDashboard
         initialStories={stories}
         initialRatings={ratings}

@@ -59,12 +59,18 @@ export default function NewsCard({ item }: NewsCardProps) {
 </div>
   )}
 
-  {/* ⭐ BADGE (score) – move to right so it doesn't clash */}
+    {/* ⭐ BADGE (score) – same style as rating page */}
   {badge && (
-    <div className="absolute right-3 top-3 z-10 rounded-full bg-black/80 px-3 py-1 text-xs font-semibold">
-      {badge}
+    <div className="absolute right-3 top-3 z-10">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-sm font-bold text-white shadow-[0_0_30px_rgba(248,113,113,0.7)]">
+        {(() => {
+          const n = Number(badge);
+          return Number.isFinite(n) ? n.toFixed(1) : badge;
+        })()}
+      </div>
     </div>
   )}
+
 
   <Image
     src={img}

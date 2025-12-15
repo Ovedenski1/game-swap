@@ -109,6 +109,8 @@ body {
   }
 }
 
+
+
 /* === thin horizontal scrollbar === */
 
 .thin-scrollbar {
@@ -136,4 +138,24 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+#react-hot-toast {
+  position: fixed !important;
+  z-index: 999999 !important;
+  top: 80px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none !important;
+}
+/* ======== Force react-hot-toast visibility (v4 selector) ======== */
+[data-rht-toaster] {
+  position: fixed !important;
+  z-index: 999999 !important;
+  top: 85px !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none !important;
 }

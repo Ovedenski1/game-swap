@@ -37,7 +37,6 @@ export interface UserProfile {
   created_at: string;
   updated_at: string;
   is_admin?: boolean | null;
-
 }
 
 const PLATFORM_LABELS: Record<GamePlatform, string> = {
@@ -162,7 +161,6 @@ export default function ProfilePage() {
                   {/* LEFT big card */}
                   <div className="lg:col-span-2">
                     <div className="bg-surface-soft rounded-2xl border border-border shadow-[0_18px_45px_rgba(0,0,0,0.8)] p-8">
-                      {/* Top row: avatar + main info */}
                       <div className="flex items-center space-x-6 mb-8">
                         <div className="relative">
                           <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-slate-900">
@@ -211,13 +209,11 @@ export default function ProfilePage() {
                           </div>
                         </div>
 
-                        {/* Swap Preferences (distance removed) */}
+                        {/* Swap Preferences */}
                         <div>
                           <h3 className="text-lg font-semibold mb-3">
                             Swap Preferences
                           </h3>
-
-                          {/* Platforms only */}
                           <div className="pt-2 border-t border-border">
                             <h4 className="text-sm font-semibold mb-2">
                               Platforms You Want to See
@@ -321,7 +317,7 @@ export default function ProfilePage() {
 
                   {/* RIGHT: Quick Actions + Account */}
                   <div className="space-y-6">
-                    {/* Quick Actions (unchanged) */}
+                    {/* Quick Actions (added My Rentals) */}
                     <div className="bg-surface-soft rounded-2xl border border-border shadow-[0_15px_40px_rgba(0,0,0,0.7)] p-6">
                       <h3 className="text-lg font-semibold mb-4">
                         Quick Actions
@@ -333,35 +329,11 @@ export default function ProfilePage() {
                         >
                           <div className="flex items-center space-x-3">
                             <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                              <svg
-                                className="w-4 h-4 text-white"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                />
-                              </svg>
+                              <span className="text-lg">✏️</span>
                             </div>
                             <span>Edit Profile</span>
                           </div>
-                          <svg
-                            className="w-5 h-5 text-white/40"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
+                          <span className="text-white/40">{">"}</span>
                         </Link>
 
                         <Link
@@ -374,19 +346,21 @@ export default function ProfilePage() {
                             </div>
                             <span>Manage Games</span>
                           </div>
-                          <svg
-                            className="w-5 h-5 text-white/40"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
+                          <span className="text-white/40">{">"}</span>
+                        </Link>
+
+                        {/* 🟡 NEW: My Rentals */}
+                        <Link
+                          href="/profile/my-rentals"
+                          className="flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors duration-200"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center">
+                              <span className="text-lg">📦</span>
+                            </div>
+                            <span>My Rentals</span>
+                          </div>
+                          <span className="text-white/40">{">"}</span>
                         </Link>
 
                         <Link
@@ -399,24 +373,12 @@ export default function ProfilePage() {
                             </div>
                             <span>Filter by Platforms</span>
                           </div>
-                          <svg
-                            className="w-5 h-5 text-white/40"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
+                          <span className="text-white/40">{">"}</span>
                         </Link>
                       </div>
                     </div>
 
-                    {/* Account card – email layout fixed */}
+                    {/* Account */}
                     <div className="bg-surface-soft rounded-2xl border border-border shadow-[0_15px_40px_rgba(0,0,0,0.7)] p-6">
                       <h3 className="text-lg font-semibold mb-4">Account</h3>
                       <div className="space-y-3">
@@ -439,14 +401,13 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
-                  {/* end right col */}
                 </div>
               </div>
             </div>
           </div>
         </div>
       </main>
-      <footer className="bg-navbar border-t border-border  text-foreground text-center py-4 text-xs sm:text-sm font-medium">
+      <footer className="bg-navbar border-t border-border text-foreground text-center py-4 text-xs sm:text-sm font-medium">
         © {new Date().getFullYear()} GameLink — Built with ❤️ using Next.js
       </footer>
     </div>
