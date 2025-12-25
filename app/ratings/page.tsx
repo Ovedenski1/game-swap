@@ -10,7 +10,13 @@ type RatingsPageProps = {
   }>;
 };
 
-function getSortConfig(sortParam: string | undefined) {
+type SortConfig = {
+  column: "created_at" | "game_title" | "score";
+  ascending: boolean;
+  label: string;
+};
+
+function getSortConfig(sortParam: string | undefined): SortConfig {
   switch (sortParam) {
     case "oldest":
       return { column: "created_at", ascending: true, label: "Oldest" };
@@ -26,6 +32,15 @@ function getSortConfig(sortParam: string | undefined) {
   }
 }
 
+type RatingRow = {
+  id: string | number;
+  game_title: string | null;
+  image_url: string | null;
+  score: number | null;
+  summary: string | null;
+  slug: string | null;
+};
+
 export default async function RatingsPage({ searchParams }: RatingsPageProps) {
   const sp = (await searchParams) ?? {};
   const q = (sp.q || "").trim();
@@ -34,9 +49,10 @@ export default async function RatingsPage({ searchParams }: RatingsPageProps) {
 
   const supabase = await createClient();
 
+  // ✅ Explicit select list so TS can infer a stable shape
   let query = supabase
     .from("ratings")
-    .select("*")
+    .select("id, game_title, image_url, score, summary, slug")
     .order(sort.column, { ascending: sort.ascending });
 
   if (q) {
@@ -49,15 +65,15 @@ export default async function RatingsPage({ searchParams }: RatingsPageProps) {
     console.error("RatingsPage Supabase error", error);
   }
 
-  const ratings = (data || []).map((row: any) => ({
+  const rows = (data ?? []) as RatingRow[];
+
+  const ratings = rows.map((row) => ({
     id: String(row.id),
-    title: (row.game_title as string) ?? "Untitled game",
-    img:
-      (row.image_url as string | null)?.trim() ||
-      "/placeholder-rating-cover.jpg",
-    score: (row.score as number) ?? 0,
-    summary: (row.summary as string | null) ?? null,
-    slug: (row.slug as string | null) ?? null,
+    title: row.game_title ?? "Untitled game",
+    img: row.image_url?.trim() || "/placeholder-rating-cover.jpg",
+    score: row.score ?? 0,
+    summary: row.summary ?? null,
+    slug: row.slug ?? null,
   }));
 
   return (

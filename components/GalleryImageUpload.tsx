@@ -1,8 +1,9 @@
 // components/GalleryImageUpload.tsx
 "use client";
 
-import React, { useState } from "react";
-import NextImage from "next/image";
+import type React from "react";
+import { useState } from "react";
+import Image from "next/image";
 
 import { uploadGameImage } from "@/lib/actions/games";
 
@@ -12,12 +13,16 @@ type GalleryImageUploadProps = {
   onChange: (url: string) => void;
 };
 
+type UploadGameImageResult =
+  | { success: true; url: string }
+  | { success: false; error: string };
+
 /* ---------------- helpers: load + downscale without cropping ---------------- */
 
 function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
-    const img = new Image(); // browser Image constructor
+    const img = new window.Image();
 
     img.onload = () => {
       URL.revokeObjectURL(url);
@@ -46,17 +51,15 @@ async function downscaleImage(
   const img = await loadImageFromFile(file);
   const { width, height } = img;
 
-  // 1) decide target size
   let targetWidth = width;
   let targetHeight = height;
 
   if (width > maxWidth || height > maxHeight) {
     const scale = Math.min(maxWidth / width, maxHeight / height);
-    targetWidth = Math.round(width * scale);
-    targetHeight = Math.round(height * scale);
+    targetWidth = Math.max(1, Math.round(width * scale));
+    targetHeight = Math.max(1, Math.round(height * scale));
   }
 
-  // 2) draw to canvas
   const canvas = document.createElement("canvas");
   canvas.width = targetWidth;
   canvas.height = targetHeight;
@@ -66,7 +69,6 @@ async function downscaleImage(
 
   ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-  // 3) export as JPEG
   const blob: Blob = await new Promise((resolve, reject) => {
     canvas.toBlob(
       (b) => {
@@ -81,7 +83,6 @@ async function downscaleImage(
   const baseName = file.name.replace(/\.[^.]+$/, "");
   return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
 }
-
 
 /* ---------------- component ---------------- */
 
@@ -106,7 +107,6 @@ export default function GalleryImageUpload({
       return;
     }
 
-    // Just a sanity upper bound (20MB raw, we will compress afterwards)
     const hardMax = 20 * 1024 * 1024;
     if (file.size > hardMax) {
       setError("Image is too large. Max size is 20MB.");
@@ -117,29 +117,21 @@ export default function GalleryImageUpload({
     setIsUploading(true);
 
     try {
-      // 🔽 shrink + compress, no cropping
       const compressed = await downscaleImage(file, 1600, 1600, 0.85);
 
-      console.log(
-        "gallery downscale:",
-        "original",
-        file.size,
-        "compressed",
-        compressed.size,
-      );
+      // Ensure TS understands the union shape (no any)
+      const res = (await uploadGameImage(compressed)) as UploadGameImageResult;
 
-      const res = await uploadGameImage(compressed);
-
-      if (!res.success || !res.url) {
+      if (!res.success) {
         console.error("Gallery upload error:", res);
         setError(res.error || "Failed to upload image.");
         return;
       }
 
-      onChange(res.url); // store URL in your gallery block
-    } catch (err: any) {
+      onChange(res.url);
+    } catch (err: unknown) {
       console.error(err);
-      setError(err?.message ?? "Failed to upload image.");
+      setError(err instanceof Error ? err.message : "Failed to upload image.");
     } finally {
       setIsUploading(false);
     }
@@ -150,15 +142,9 @@ export default function GalleryImageUpload({
       {label && <p className="text-[11px] text-white/60">{label}</p>}
 
       <div className="flex items-center gap-3">
-        {/* small square preview */}
         <div className="relative h-20 w-20 bg-black border border-white/20 flex items-center justify-center overflow-hidden">
           {value ? (
-            <NextImage
-              src={value}
-              alt={label}
-              fill
-              className="object-contain"
-            />
+            <Image src={value} alt={label} fill className="object-contain" />
           ) : (
             <span className="text-[10px] text-white/50 text-center px-1">
               No image

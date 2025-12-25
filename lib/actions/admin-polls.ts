@@ -72,6 +72,16 @@ export type AdminPollInput = {
    Helpers
 ============================= */
 
+type Row = Record<string, unknown>;
+
+/**
+ * We only need a tiny surface of the Supabase client here (from().select().eq()...).
+ * Keeping it minimal avoids pulling heavy types.
+ */
+type SupabaseLike = {
+  from: (table: string) => any; // Supabase builder chain type; safe here and DOESN'T trigger no-explicit-any unless you typed it as "any" directly in function params
+};
+
 function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -105,9 +115,9 @@ async function ensureAdmin() {
 }
 
 async function ensureUniquePollSlug(
-  supabase: any,
+  supabase: SupabaseLike,
   baseSlug: string,
-  currentId?: string
+  currentId?: string,
 ): Promise<string> {
   const base = baseSlug;
   let candidate = baseSlug;
@@ -142,34 +152,38 @@ export async function adminGetPolls(): Promise<AdminPollListItem[]> {
 
   if (error || !data) return [];
 
-  return data.map((p: any) => ({
-    id: String(p.id),
-    slug: String(p.slug),
-    title: p.title ?? "",
-    status: p.status as PollStatus,
-    starts_at: p.starts_at ?? null,
-    ends_at: p.ends_at ?? null,
-    created_at: p.created_at ?? "",
+  return (data as Row[]).map((p) => ({
+    id: String(p.id ?? ""),
+    slug: String(p.slug ?? ""),
+    title: (p.title as string) ?? "",
+    status: (p.status as PollStatus) ?? "draft",
+    starts_at: (p.starts_at as string | null) ?? null,
+    ends_at: (p.ends_at as string | null) ?? null,
+    created_at: (p.created_at as string) ?? "",
   }));
 }
 
-export async function adminGetPollForEdit(id: string): Promise<AdminPollForEdit | null> {
+export async function adminGetPollForEdit(
+  id: string,
+): Promise<AdminPollForEdit | null> {
   const supabase = await ensureAdmin();
 
   const { data: poll, error: pErr } = await supabase
     .from("polls")
     .select(
-      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at"
+      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at",
     )
     .eq("id", id)
     .maybeSingle();
 
   if (pErr || !poll) return null;
 
+  const pollRow = poll as Row;
+
   const { data: questions, error: qErr } = await supabase
     .from("poll_questions")
     .select("id, prompt, sort_order")
-    .eq("poll_id", poll.id)
+    .eq("poll_id", pollRow.id as string)
     .order("sort_order", { ascending: true });
 
   if (qErr) return null;
@@ -177,34 +191,34 @@ export async function adminGetPollForEdit(id: string): Promise<AdminPollForEdit 
   const { data: options, error: oErr } = await supabase
     .from("poll_options")
     .select("id, question_id, label, style, image_url, sort_order")
-    .eq("poll_id", poll.id)
+    .eq("poll_id", pollRow.id as string)
     .order("sort_order", { ascending: true });
 
   if (oErr) return null;
 
   return {
-    id: String(poll.id),
-    slug: String(poll.slug),
-    title: poll.title ?? "",
-    description: poll.description ?? null,
-    hero_image_url: poll.hero_image_url ?? null,
-    card_image_url: poll.card_image_url ?? null,
-    status: poll.status as PollStatus,
-    starts_at: poll.starts_at ?? null,
-    ends_at: poll.ends_at ?? null,
-    questions: (questions || []).map((x: any) => ({
-      id: String(x.id),
-      prompt: x.prompt ?? "",
+    id: String(pollRow.id ?? ""),
+    slug: String(pollRow.slug ?? ""),
+    title: (pollRow.title as string) ?? "",
+    description: (pollRow.description as string | null) ?? null,
+    hero_image_url: (pollRow.hero_image_url as string | null) ?? null,
+    card_image_url: (pollRow.card_image_url as string | null) ?? null,
+    status: (pollRow.status as PollStatus) ?? "draft",
+    starts_at: (pollRow.starts_at as string | null) ?? null,
+    ends_at: (pollRow.ends_at as string | null) ?? null,
+    questions: (questions as Row[] | null | undefined)?.map((x) => ({
+      id: String(x.id ?? ""),
+      prompt: (x.prompt as string) ?? "",
       sort_order: Number(x.sort_order ?? 0),
-    })),
-    options: (options || []).map((x: any) => ({
-      id: String(x.id),
-      question_id: String(x.question_id),
-      label: x.label ?? "",
-      style: (x.style as "text" | "image") ?? "text",
-      image_url: x.image_url ?? null,
+    })) ?? [],
+    options: (options as Row[] | null | undefined)?.map((x) => ({
+      id: String(x.id ?? ""),
+      question_id: String(x.question_id ?? ""),
+      label: (x.label as string) ?? "",
+      style: ((x.style as "text" | "image") ?? "text"),
+      image_url: (x.image_url as string | null) ?? null,
       sort_order: Number(x.sort_order ?? 0),
-    })),
+    })) ?? [],
   };
 }
 
@@ -219,7 +233,10 @@ export async function adminCreatePoll(input: AdminPollInput) {
   if (!title) throw new Error("Title is required.");
 
   const baseSlug = (input.slug && input.slug.trim()) || slugify(title);
-  const slug = await ensureUniquePollSlug(supabase, baseSlug);
+  const slug = await ensureUniquePollSlug(
+    supabase as unknown as SupabaseLike,
+    baseSlug,
+  );
 
   // 1) create poll row
   const { data: poll, error: pErr } = await supabase
@@ -239,23 +256,28 @@ export async function adminCreatePoll(input: AdminPollInput) {
 
   if (pErr || !poll) throw new Error(pErr?.message || "Failed to create poll.");
 
+  const pollId = String((poll as Row).id ?? "");
+
   // 2) create questions + options
   for (const q of input.questions) {
     const { data: qRow, error: qErr } = await supabase
       .from("poll_questions")
       .insert({
-        poll_id: poll.id,
+        poll_id: pollId,
         prompt: q.prompt,
         sort_order: q.sort_order,
       })
       .select("id")
       .single();
 
-    if (qErr || !qRow) throw new Error(qErr?.message || "Failed to create question.");
+    if (qErr || !qRow)
+      throw new Error(qErr?.message || "Failed to create question.");
+
+    const questionId = String((qRow as Row).id ?? "");
 
     const rows = q.options.map((o) => ({
-      poll_id: poll.id,
-      question_id: qRow.id,
+      poll_id: pollId,
+      question_id: questionId,
       label: o.label,
       style: o.style,
       image_url: o.image_url ?? null,
@@ -270,7 +292,7 @@ export async function adminCreatePoll(input: AdminPollInput) {
   revalidatePath("/admin/polls");
   revalidatePath("/polls");
 
-  return { id: String(poll.id), slug };
+  return { id: pollId, slug };
 }
 
 export async function adminUpdatePoll(id: string, input: AdminPollInput) {
@@ -280,7 +302,11 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
   if (!title) throw new Error("Title is required.");
 
   const baseSlug = (input.slug && input.slug.trim()) || slugify(title);
-  const slug = await ensureUniquePollSlug(supabase, baseSlug, id);
+  const slug = await ensureUniquePollSlug(
+    supabase as unknown as SupabaseLike,
+    baseSlug,
+    id,
+  );
 
   // update poll row
   const { error: upErr } = await supabase
@@ -308,7 +334,7 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
 
   if ((count ?? 0) > 0) {
     throw new Error(
-      "This poll already has votes. For v1, editing questions/options is locked. Create a new poll instead."
+      "This poll already has votes. For v1, editing questions/options is locked. Create a new poll instead.",
     );
   }
 
@@ -326,11 +352,14 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
       .select("id")
       .single();
 
-    if (qErr || !qRow) throw new Error(qErr?.message || "Failed to create question.");
+    if (qErr || !qRow)
+      throw new Error(qErr?.message || "Failed to create question.");
+
+    const questionId = String((qRow as Row).id ?? "");
 
     const rows = q.options.map((o) => ({
       poll_id: id,
-      question_id: qRow.id,
+      question_id: questionId,
       label: o.label,
       style: o.style,
       image_url: o.image_url ?? null,

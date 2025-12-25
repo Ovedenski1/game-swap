@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { adminGetRatings } from "@/lib/actions/admin-content";
 import ShareButtons from "@/components/ShareButton";
 
-import { SocialEmbed } from "@/components/SocialEmbed";
+import SocialEmbed, { type EmbedSize as SocialEmbedSize } from "@/components/SocialEmbed";
 import StoryGallery from "@/components/StoryGallery";
 
 type PageParams = { id: string };
@@ -23,20 +23,13 @@ type CardMediaType = "none" | "video" | "imageGrid";
 type CardLayout = "mediaTop" | "mediaBottom" | "mediaLeft" | "mediaRight";
 type CardMediaSizeMode = "fixed" | "flex";
 type CardWidth = "narrow" | "full";
-type EmbedSize = "default" | "wide" | "compact";
 
 type StoryBlock =
   | { id?: string; type: "paragraph"; text: string }
   | { id?: string; type: "heading"; level: 2 | 3; text: string }
   | { id?: string; type: "image"; url: string; caption?: string }
   | { id?: string; type: "quote"; text: string }
-  | {
-      id?: string;
-      type: "embed";
-      url: string;
-      title?: string;
-      size?: EmbedSize;
-    }
+  | { id?: string; type: "embed"; url: string; title?: string; size?: SocialEmbedSize }
   | {
       id?: string;
       type: "card";
@@ -62,57 +55,70 @@ type StoryBlock =
       withBackground?: boolean;
     }
   | { id?: string; type: "divider" }
-  | { [key: string]: any };
+  | { id?: string; type?: string; [key: string]: unknown };
 
 /* ------------------------------------------------------------------ */
 /* Shared helper – fetch by id OR slug                                */
 /* ------------------------------------------------------------------ */
 
 function looksLikeUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value
-  );
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
+
+type StoryRow = {
+  id: string;
+  slug: string | null;
+  title: string | null;
+  subtitle: string | null;
+  summary: string | null;
+  body: string | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string | null;
+  content_blocks: unknown;
+  meta_title: string | null;
+  meta_description: string | null;
+  author_name: string | null;
+  author_role: string | null;
+  author_avatar_url: string | null;
+  reviewed_by: string | null;
+};
 
 async function fetchStoryByIdOrSlug(idOrSlug: string) {
   const supabase = await createClient();
 
   const baseSelect = supabase.from("top_stories").select(`
-        id,
-        slug,
-        title,
-        subtitle,
-        summary,
-        body,
-        image_url,
-        created_at,
-        updated_at,
-        content_blocks,
-        meta_title,
-        meta_description,
-        author_name,
-        author_role,
-        author_avatar_url,
-        reviewed_by
-      `);
+      id,
+      slug,
+      title,
+      subtitle,
+      summary,
+      body,
+      image_url,
+      created_at,
+      updated_at,
+      content_blocks,
+      meta_title,
+      meta_description,
+      author_name,
+      author_role,
+      author_avatar_url,
+      reviewed_by
+    `);
 
   const isUuid = looksLikeUuid(idOrSlug);
 
-  const query = isUuid
-    ? baseSelect.eq("id", idOrSlug)
-    : baseSelect.eq("slug", idOrSlug);
+  const query = isUuid ? baseSelect.eq("id", idOrSlug) : baseSelect.eq("slug", idOrSlug);
 
   const { data, error } = await query.maybeSingle();
-  return { data, error };
+  return { data: data as StoryRow | null, error };
 }
 
 /* ------------------------------------------------------------------ */
 /* SEO metadata                                                       */
 /* ------------------------------------------------------------------ */
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const resolvedParams = params instanceof Promise ? await params : params;
   const { id } = resolvedParams;
 
@@ -127,34 +133,27 @@ export async function generateMetadata({
 
   const siteName = "Checkpoint";
 
-  const rawTitle =
-    (data.meta_title as string | null) ??
-    (data.title as string | null) ?? // admin title
-    "News article";
+  const rawTitle = data.meta_title ?? data.title ?? "News article";
   const fullTitle = `${rawTitle} | ${siteName}`;
 
   const rawDescription =
-    (data.meta_description as string | null) ??
-    (data.summary as string | null) ??
-    (data.subtitle as string | null) ??
-    (typeof data.body === "string"
-      ? data.body.replace(/[#_*`>]/g, "").slice(0, 160)
-      : null) ??
+    data.meta_description ??
+    data.summary ??
+    data.subtitle ??
+    (typeof data.body === "string" ? data.body.replace(/[#_*`>]/g, "").slice(0, 160) : null) ??
     "Game news and reviews on Checkpoint.";
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
-  const pathSegment = (data.slug as string | null) ?? String(data.id);
+  const pathSegment = data.slug ?? String(data.id);
   const canonicalUrl = `${baseUrl}/news/${pathSegment}`;
 
-  const authorName = (data.author_name as string | null) ?? null;
+  const authorName = data.author_name ?? null;
 
   return {
     title: fullTitle,
     description: rawDescription,
-    alternates: {
-      canonical: canonicalUrl,
-    },
+    alternates: { canonical: canonicalUrl },
     openGraph: {
       title: fullTitle,
       description: rawDescription,
@@ -164,7 +163,7 @@ export async function generateMetadata({
       images: data.image_url
         ? [
             {
-              url: data.image_url as string,
+              url: data.image_url,
               alt: rawTitle,
             },
           ]
@@ -174,7 +173,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title: fullTitle,
       description: rawDescription,
-      images: data.image_url ? [data.image_url as string] : undefined,
+      images: data.image_url ? [data.image_url] : undefined,
     },
     authors: authorName ? [{ name: authorName }] : undefined,
   };
@@ -184,14 +183,27 @@ export async function generateMetadata({
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+function parseJson<T>(value: unknown): T | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+  return value as T;
+}
+
 function getYouTubeEmbedUrl(url: string | undefined): string | null {
   if (!url) return null;
   try {
     const u = new URL(url);
-    if (u.hostname === "youtu.be" || u.hostname.endsWith("youtube.com")) {
-      if (u.hostname === "youtu.be") {
-        return `https://www.youtube.com/embed${u.pathname}`;
-      }
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+
+    if (host === "youtu.be") return `https://www.youtube.com/embed${u.pathname}`;
+
+    if (host.endsWith("youtube.com")) {
       const v = u.searchParams.get("v");
       if (v) return `https://www.youtube.com/embed/${v}`;
       if (u.pathname.startsWith("/embed/")) return url;
@@ -222,6 +234,10 @@ function cardVariantClasses(variant: string | undefined) {
   }
 }
 
+function isEmbedSize(v: unknown): v is SocialEmbedSize {
+  return v === "default" || v === "wide" || v === "compact";
+}
+
 /* ------------------------------------------------------------------ */
 /* Page component                                                     */
 /* ------------------------------------------------------------------ */
@@ -237,67 +253,54 @@ export default async function NewsArticlePage({ params }: PageProps) {
     notFound();
   }
 
-  // ⭐ If the URL uses the raw id but the story has a slug,
-  // redirect to the canonical slug URL
   if (id === String(data.id) && data.slug) {
     redirect(`/news/${data.slug}`);
   }
 
-  const articleId = data.id as string;
-  const articleTitle = String(data.title || "Article");
+  const articleId = data.id;
+  const articleTitle = String(data.title ?? "Article");
   const publishedDate = new Date(data.created_at).toLocaleDateString();
-  const updatedDate = data.updated_at
-    ? new Date(data.updated_at).toLocaleDateString()
-    : null;
+  const updatedDate = data.updated_at ? new Date(data.updated_at).toLocaleDateString() : null;
 
-  const authorName = (data.author_name as string | null) ?? null;
-  const authorRole = (data.author_role as string | null) ?? null;
-  const authorAvatar =
-    (data.author_avatar_url as string | null) || "/default.jpg";
-  const reviewedBy = (data.reviewed_by as string | null) ?? null;
+  const authorName = data.author_name ?? null;
+  const authorRole = data.author_role ?? null;
+  const authorAvatar = data.author_avatar_url || "/default.jpg";
+  const reviewedBy = data.reviewed_by ?? null;
 
-  const heroImageUrl =
-    (data.image_url as string | null) && (data.image_url as string).trim() !== ""
-      ? (data.image_url as string)
-      : null;
+  const heroImageUrl = data.image_url && data.image_url.trim() !== "" ? data.image_url : null;
 
-  // Absolute URL for sharing
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const articlePath = data.slug
-    ? `/news/${data.slug as string}`
-    : `/news/${data.id as string}`;
+  const articlePath = data.slug ? `/news/${data.slug}` : `/news/${data.id}`;
   const articleUrl = `${siteUrl}${articlePath}`;
 
   let blocks: StoryBlock[] = [];
-  if (data.content_blocks) {
-    try {
-      blocks = Array.isArray(data.content_blocks)
-        ? (data.content_blocks as StoryBlock[])
-        : (JSON.parse(data.content_blocks as any) as StoryBlock[]);
-    } catch (e) {
-      console.error("Failed to parse content_blocks", e);
-      blocks = [];
-    }
+
+  const parsedBlocks = parseJson<StoryBlock[]>(data.content_blocks);
+  if (Array.isArray(parsedBlocks)) {
+    blocks = parsedBlocks;
   }
 
   if (blocks.length === 0) {
-    const bodyText: string =
-      (data.summary as string | null) ?? (data.subtitle as string | null) ?? "";
-
+    const bodyText = data.summary ?? data.subtitle ?? "";
     const paragraphs = bodyText
       .split(/\n{2,}/)
       .map((p) => p.trim())
       .filter(Boolean);
 
-    blocks = paragraphs.map((p) => ({
-      type: "paragraph",
-      text: p,
-    })) as StoryBlock[];
+    blocks = paragraphs.map((p) => ({ type: "paragraph", text: p }));
   }
 
   const supabase = await createClient();
 
-  // ✅ only change: show MORE stories than ratings in the sidebar
+  type MoreStoryRow = {
+    id: string;
+    slug: string | null;
+    title: string;
+    subtitle: string | null;
+    image_url: string | null;
+    created_at: string;
+  };
+
   const { data: moreStoriesRaw } = await supabase
     .from("top_stories")
     .select("id, slug, title, subtitle, image_url, created_at")
@@ -306,43 +309,35 @@ export default async function NewsArticlePage({ params }: PageProps) {
     .limit(10);
 
   const moreStories =
-    moreStoriesRaw?.map((row: any) => ({
-      id: row.id as string,
-      slug: (row.slug as string | null) ?? null,
-      title: row.title as string,
-      subtitle: (row.subtitle as string | null) ?? undefined,
-      img:
-        (row.image_url as string | null) &&
-        (row.image_url as string).trim() !== ""
-          ? (row.image_url as string)
-          : null,
+    (moreStoriesRaw as MoreStoryRow[] | null)?.map((row) => ({
+      id: row.id,
+      slug: row.slug ?? null,
+      title: row.title,
+      subtitle: row.subtitle ?? undefined,
+      img: row.image_url && row.image_url.trim() !== "" ? row.image_url : null,
     })) ?? [];
 
   const allRatings = await adminGetRatings();
   const sidebarRatings = allRatings.slice(0, 10);
 
   function renderBlock(block: StoryBlock, index: number) {
-    const key = (block as any).id ?? index;
+    const key = typeof block.id === "string" && block.id ? block.id : index;
 
     switch (block.type) {
       case "heading": {
-        const level = (block as any).level ?? 2;
-        const text = (block as any).text ?? "";
+        const level = "level" in block && (block.level === 2 || block.level === 3) ? block.level : 2;
+        const text = "text" in block && typeof block.text === "string" ? block.text : "";
         if (!text) return null;
 
-        const baseClasses =
-          "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
-        const h2Classes = "text-2xl sm:text[26px]";
-        const h3Classes = "text-xl sm:text[20px]";
+        const baseClasses = "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
+        const h2Classes = "text-2xl sm:text-[26px]";
+        const h3Classes = "text-xl sm:text-[20px]";
 
-        if (level === 3) {
-          return (
-            <h3 key={key} className={`${baseClasses} ${h3Classes}`}>
-              {text}
-            </h3>
-          );
-        }
-        return (
+        return level === 3 ? (
+          <h3 key={key} className={`${baseClasses} ${h3Classes}`}>
+            {text}
+          </h3>
+        ) : (
           <h2 key={key} className={`${baseClasses} ${h2Classes}`}>
             {text}
           </h2>
@@ -350,7 +345,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
       }
 
       case "paragraph": {
-        const text = (block as any).text ?? "";
+        const text = "text" in block && typeof block.text === "string" ? block.text : "";
         if (!text) return null;
         return (
           <div
@@ -362,15 +357,12 @@ export default async function NewsArticlePage({ params }: PageProps) {
       }
 
       case "image": {
-        const url = (block as any).url ?? "";
-        const caption = (block as any).caption ?? "";
+        const url = "url" in block && typeof block.url === "string" ? block.url : "";
+        const caption = "caption" in block && typeof block.caption === "string" ? block.caption : "";
         if (!url) return null;
 
         return (
-          <figure
-            key={key}
-            className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40"
-          >
+          <figure key={key} className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
             <div className="relative w-full aspect-[16/9]">
               <Image
                 src={url}
@@ -390,7 +382,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
       }
 
       case "quote": {
-        const text = (block as any).text ?? "";
+        const text = "text" in block && typeof block.text === "string" ? block.text : "";
         if (!text) return null;
         return (
           <blockquote
@@ -402,74 +394,84 @@ export default async function NewsArticlePage({ params }: PageProps) {
         );
       }
 
-      /* ---------- NEW: clean embed using SocialEmbed ---------- */
       case "embed": {
-        const url = (block as any).url ?? "";
-        const embedTitle = (block as any).title ?? "";
-        const size = (block as any).size as EmbedSize | undefined;
-
+        const url = "url" in block && typeof block.url === "string" ? block.url : "";
         if (!url) return null;
 
-        return <SocialEmbed key={key} url={url} title={embedTitle} size={size} />;
+        const title = "title" in block && typeof block.title === "string" ? block.title : undefined;
+        const sizeRaw = "size" in block ? block.size : undefined;
+        const size = isEmbedSize(sizeRaw) ? sizeRaw : undefined;
+
+        return <SocialEmbed key={key} url={url} title={title} size={size} />;
       }
 
       case "gallery": {
-        const b: any = block;
-        const title = b.title ?? "";
-        const images = Array.isArray(b.images)
-          ? b.images.filter((img: any) => img && img.url)
+        const title = "title" in block && typeof block.title === "string" ? block.title : "";
+        const images = "images" in block && Array.isArray(block.images)
+          ? block.images.filter((img) => img && typeof img.url === "string" && img.url)
           : [];
-        const withBackground = b.withBackground ?? false;
 
-        if (!images.length) return null;
+        if (images.length === 0) return null;
 
-        const galleryImages = images.map((img: any, imgIndex: number) => ({
-          id: img.id ?? `${key}-${imgIndex}`,
+        const galleryImages = images.map((img, imgIndex) => ({
+          id: typeof img.id === "string" && img.id ? img.id : `${key}-${imgIndex}`,
           url: img.url,
-          caption: img.caption,
+          caption: typeof img.caption === "string" ? img.caption : undefined,
         }));
+
+        const withBackground = "withBackground" in block ? Boolean(block.withBackground) : false;
 
         return (
           <div key={key} className="mt-6 space-y-2">
-            {title && (
-              <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">
-                {title}
-              </h3>
-            )}
+            {title && <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">{title}</h3>}
             <StoryGallery images={galleryImages} withBackground={withBackground} />
           </div>
         );
       }
 
       case "card": {
-        const b: any = block;
-        const title = b.title ?? "";
-        const body = b.body ?? b.text ?? "";
-        const rawLinkUrl = b.linkUrl ?? "";
+        const title = "title" in block && typeof block.title === "string" ? block.title : "";
+        const bodyRaw =
+          "body" in block && typeof block.body === "string"
+            ? block.body
+            : "text" in block && typeof block.text === "string"
+              ? block.text
+              : "";
+
+        const rawLinkUrl = "linkUrl" in block && typeof block.linkUrl === "string" ? block.linkUrl : "";
         const linkUrl = rawLinkUrl ? normalizeUrl(rawLinkUrl) : "";
-        const linkLabel = b.linkLabel || "Learn more";
-        const variant: CardVariant = b.variant ?? "default";
-        const mediaType: CardMediaType = b.mediaType ?? "none";
-        const _mediaSizeMode: CardMediaSizeMode =
-          b.mediaSizeMode === "flex" ? "flex" : "fixed";
-        const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
+        const linkLabel = "linkLabel" in block && typeof block.linkLabel === "string" ? block.linkLabel : "Learn more";
+
+        const variant: CardVariant =
+          "variant" in block && (block.variant === "compact" || block.variant === "featured")
+            ? block.variant
+            : "default";
+
+        const mediaType: CardMediaType =
+          "mediaType" in block && (block.mediaType === "video" || block.mediaType === "imageGrid")
+            ? block.mediaType
+            : "none";
+
+        const cardWidth: CardWidth = "cardWidth" in block && block.cardWidth === "full" ? "full" : "narrow";
 
         const layout: CardLayout =
-          b.layout === "mediaBottom" ||
-          b.layout === "mediaLeft" ||
-          b.layout === "mediaRight"
-            ? b.layout
+          "layout" in block &&
+          (block.layout === "mediaBottom" || block.layout === "mediaLeft" || block.layout === "mediaRight")
+            ? block.layout
             : "mediaTop";
 
-        const videoUrl = b.videoUrl as string | undefined;
+        const videoUrl = "videoUrl" in block && typeof block.videoUrl === "string" ? block.videoUrl : undefined;
         const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
 
-        const imageUrls: string[] = Array.isArray(b.imageUrls)
-          ? b.imageUrls.filter(Boolean)
-          : [];
-        const imageLayout: "row" | "grid" = b.imageLayout === "grid" ? "grid" : "row";
+        const imageUrls: string[] =
+          "imageUrls" in block && Array.isArray(block.imageUrls)
+            ? block.imageUrls.filter((u): u is string => typeof u === "string" && Boolean(u))
+            : [];
 
-        if (!title && !body && !imageUrls.length && !embedUrl) return null;
+        const imageLayout: "row" | "grid" =
+          "imageLayout" in block && block.imageLayout === "grid" ? "grid" : "row";
+
+        if (!title && !bodyRaw && imageUrls.length === 0 && !embedUrl) return null;
 
         const media = embedUrl ? (
           <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
@@ -527,12 +529,10 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
         const textSection = (
           <>
-            {title && (
-              <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>
-            )}
-            {body && (
+            {title && <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>}
+            {bodyRaw && (
               <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
-                <div dangerouslySetInnerHTML={{ __html: body }} />
+                <div dangerouslySetInnerHTML={{ __html: bodyRaw }} />
               </div>
             )}
             {linkUrl && (
@@ -549,32 +549,28 @@ export default async function NewsArticlePage({ params }: PageProps) {
           </>
         );
 
-        let inner;
-
-        if (layout === "mediaLeft" || layout === "mediaRight") {
-          const floatClass =
-            layout === "mediaRight"
-              ? "float-right ml-4 mb-2 w-24 sm:w-32"
-              : "float-left mr-4 mb-2 w-24 sm:w-32";
-
-          inner = (
+        const inner =
+          layout === "mediaLeft" || layout === "mediaRight" ? (
             <div className='after:content-[""] after:block after:clear-both'>
-              {media && <div className={floatClass}>{media}</div>}
+              {media && (
+                <div
+                  className={
+                    layout === "mediaRight"
+                      ? "float-right ml-4 mb-2 w-24 sm:w-32"
+                      : "float-left mr-4 mb-2 w-24 sm:w-32"
+                  }
+                >
+                  {media}
+                </div>
+              )}
               {textSection}
             </div>
-          );
-        } else {
-          inner = (
-            <div
-              className={`flex flex-col gap-3 ${
-                layout === "mediaBottom" ? "flex-col-reverse" : "flex-col"
-              }`}
-            >
+          ) : (
+            <div className={`flex flex-col gap-3 ${layout === "mediaBottom" ? "flex-col-reverse" : ""}`}>
               {media && <div>{media}</div>}
               <div className="space-y-1">{textSection}</div>
             </div>
           );
-        }
 
         const widthClass = cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
 
@@ -594,24 +590,19 @@ export default async function NewsArticlePage({ params }: PageProps) {
   }
 
   return (
-    // ✅ only change: remove outer “background wrapper” layers and use the same clean client container
     <div className="max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 py-8">
-      <Link
-        href="/"
-        className="inline-flex items-center text-xs sm:text-sm text-white/70 hover:text-white mb-4"
-      >
+      <Link href="/" className="inline-flex items-center text-xs sm:text-sm text-white/70 hover:text-white mb-4">
         ← Back to home
       </Link>
 
       <div className="grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 xl:gap-12">
-        {/* MAIN ARTICLE */}
         <article className="space-y-5">
           <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/40">
             {heroImageUrl ? (
               <div className="relative w-full aspect-[16/9]">
                 <Image
                   src={heroImageUrl}
-                  alt={data.title || "Article image"}
+                  alt={data.title ?? "Article image"}
                   fill
                   sizes="(min-width: 1200px) 900px, 100vw"
                   className="object-cover"
@@ -625,16 +616,13 @@ export default async function NewsArticlePage({ params }: PageProps) {
           </div>
 
           <header className="space-y-3">
-            {/* date on the left, share on the right */}
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] sm:text-xs uppercase tracking-wide text-white/60">
                 {publishedDate}
                 {updatedDate && updatedDate !== publishedDate && (
                   <>
                     {" / "}
-                    <span className="normal-case text-white/70">
-                      updated {updatedDate}
-                    </span>
+                    <span className="normal-case text-white/70">updated {updatedDate}</span>
                   </>
                 )}
               </p>
@@ -654,48 +642,25 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
           <section className="mt-2 space-y-3">
             {blocks.length === 0 ? (
-              <p className="text-sm text-white/70">
-                No article content has been added yet.
-              </p>
+              <p className="text-sm text-white/70">No article content has been added yet.</p>
             ) : (
               blocks.map((block, idx) => renderBlock(block, idx))
             )}
           </section>
 
-          {/* AUTHOR CARD AT BOTTOM */}
           {(authorName || authorRole || reviewedBy) && (
             <section className="mt-8">
               <div className="border-t border-white/10 pt-6">
                 <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3">
                   <div className="relative w-12 h-12 rounded-full overflow-hidden border border-white/40 flex-shrink-0">
-                    <Image
-                      src={authorAvatar}
-                      alt={authorName || "Author"}
-                      fill
-                      sizes="48px"
-                      className="object-cover"
-                    />
+                    <Image src={authorAvatar} alt={authorName || "Author"} fill sizes="48px" className="object-cover" />
                   </div>
 
                   <div className="flex flex-col text-sm min-w-0">
-                    {authorName && (
-                      <span className="font-semibold leading-tight">
-                        By {authorName}
-                      </span>
-                    )}
-                    {authorRole && (
-                      <span className="text-xs text-white/60 leading-tight">
-                        {authorRole}
-                      </span>
-                    )}
-                    <span className="mt-1 text-[11px] text-white/50">
-                      Published on {publishedDate}
-                    </span>
-                    {reviewedBy && (
-                      <span className="mt-1 text-[11px] text-white/50">
-                        Reviewed by {reviewedBy}
-                      </span>
-                    )}
+                    {authorName && <span className="font-semibold leading-tight">By {authorName}</span>}
+                    {authorRole && <span className="text-xs text-white/60 leading-tight">{authorRole}</span>}
+                    <span className="mt-1 text-[11px] text-white/50">Published on {publishedDate}</span>
+                    {reviewedBy && <span className="mt-1 text-[11px] text-white/50">Reviewed by {reviewedBy}</span>}
                   </div>
                 </div>
               </div>
@@ -703,24 +668,17 @@ export default async function NewsArticlePage({ params }: PageProps) {
           )}
         </article>
 
-        {/* SIDEBAR DESKTOP (hidden on mobile) */}
         <aside className="hidden space-y-6 lg:block">
           {moreStories.length > 0 && (
             <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                More stories
-              </h2>
+              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">More stories</h2>
               <div className="space-y-3">
                 {moreStories.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/news/${s.slug || s.id}`}
-                    className="flex gap-3 group"
-                  >
+                  <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                     <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                       {s.img ? (
                         <Image
-                          src={s.img as string}
+                          src={s.img}
                           alt={s.title}
                           fill
                           sizes="80px"
@@ -733,14 +691,8 @@ export default async function NewsArticlePage({ params }: PageProps) {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                        {s.title}
-                      </p>
-                      {s.subtitle && (
-                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                          {s.subtitle}
-                        </p>
-                      )}
+                      <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
+                      {s.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>}
                     </div>
                   </Link>
                 ))}
@@ -750,33 +702,16 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
           {sidebarRatings.length > 0 && (
             <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                Latest ratings
-              </h2>
+              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Latest ratings</h2>
               <div className="space-y-3">
                 {sidebarRatings.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
-                  >
+                  <div key={r.id} className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10">
                     <div className="relative w-16 h-16 flex-shrink-0">
-                      <Image
-                        src={r.img}
-                        alt={r.game_title}
-                        fill
-                        sizes="64px"
-                        className="object-cover"
-                      />
+                      <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                     </div>
                     <div className="flex-1 min-w-0 py-2 pr-3">
-                      <p className="text-xs font-semibold line-clamp-2">
-                        {r.game_title}
-                      </p>
-                      {r.subtitle && (
-                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                          {r.subtitle}
-                        </p>
-                      )}
+                      <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
+                      {r.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>}
                     </div>
                     <div className="px-2 pr-3">
                       <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
@@ -791,24 +726,17 @@ export default async function NewsArticlePage({ params }: PageProps) {
         </aside>
       </div>
 
-      {/* SIDEBAR MOBILE */}
       <div className="mt-8 space-y-6 lg:hidden">
         {moreStories.length > 0 && (
           <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-              More stories
-            </h2>
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">More stories</h2>
             <div className="space-y-3">
               {moreStories.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/news/${s.slug || s.id}`}
-                  className="flex gap-3 group"
-                >
+                <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                   <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                     {s.img ? (
                       <Image
-                        src={s.img as string}
+                        src={s.img}
                         alt={s.title}
                         fill
                         sizes="80px"
@@ -821,14 +749,8 @@ export default async function NewsArticlePage({ params }: PageProps) {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                      {s.title}
-                    </p>
-                    {s.subtitle && (
-                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                        {s.subtitle}
-                      </p>
-                    )}
+                    <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
+                    {s.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>}
                   </div>
                 </Link>
               ))}
@@ -838,33 +760,16 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
         {sidebarRatings.length > 0 && (
           <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-              Latest ratings
-            </h2>
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Latest ratings</h2>
             <div className="space-y-3">
               {sidebarRatings.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
-                >
+                <div key={r.id} className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10">
                   <div className="relative w-16 h-16 flex-shrink-0">
-                    <Image
-                      src={r.img}
-                      alt={r.game_title}
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
+                    <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                   </div>
                   <div className="flex-1 min-w-0 py-2 pr-3">
-                    <p className="text-xs font-semibold line-clamp-2">
-                      {r.game_title}
-                    </p>
-                    {r.subtitle && (
-                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                        {r.subtitle}
-                      </p>
-                    )}
+                    <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
+                    {r.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>}
                   </div>
                   <div className="px-2 pr-3">
                     <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">

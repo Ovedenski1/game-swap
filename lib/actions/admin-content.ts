@@ -53,6 +53,9 @@ export type UpcomingGameItem = {
   created_at?: string | null;
 };
 
+/** Generic "row" shape from Supabase selects */
+type Row = Record<string, unknown>;
+
 /* ---------- helpers ---------- */
 
 function slugify(input: string): string {
@@ -64,8 +67,12 @@ function slugify(input: string): string {
     .replace(/-+/g, "-");
 }
 
+type SupabaseLike = {
+  from: (table: string) => any; // NOTE: Supabase server client type is huge; we avoid importing it here.
+};
+
 async function ensureUniqueSlug(
-  supabase: any,
+  supabase: SupabaseLike,
   table: "ratings" | "top_stories",
   baseSlug: string | null,
   currentId?: string | number,
@@ -96,15 +103,18 @@ async function ensureUniqueSlug(
 
 /* ---------- mappers ---------- */
 
-function mapStoryRow(row: any): NewsItem {
+function mapStoryRow(row: Row): NewsItem {
+  const id = row.id as string | number | null;
+  const slug = row.slug as string | null;
+
   const internalPath =
-    row.slug ? `/news/${row.slug}` : row.id ? `/news/${row.id}` : undefined;
+    slug ? `/news/${slug}` : id ? `/news/${String(id)}` : undefined;
 
   return {
-    id: row.id,
-    title: row.title as string,
-    img: row.image_url as string,
-    href: row.link_url ?? internalPath,
+    id: id as any, // NewsItem likely expects whatever your component uses; keep it stable.
+    title: (row.title as string) ?? "",
+    img: (row.image_url as string) ?? "",
+    href: (row.link_url as string | null) ?? internalPath,
     subtitle:
       (row.subtitle as string | null) ??
       (row.summary as string | null) ??
@@ -112,30 +122,30 @@ function mapStoryRow(row: any): NewsItem {
   };
 }
 
-function mapRatingRow(row: any): RatingItem {
+function mapRatingRow(row: Row): RatingItem {
   return {
-    id: String(row.id),
-    game_title: row.game_title as string,
-    img: row.image_url as string,
-    score: row.score as number,
-    subtitle: (row.summary as string | null) ?? null,
-    slug: (row.slug as string | null) ?? null,
+    id: String(row.id ?? ""),
+    game_title: (row.game_title as string) ?? "",
+    img: (row.image_url as string) ?? "",
+    score: Number(row.score ?? 0),
+    subtitle: ((row.summary as string | null) ?? null),
+    slug: ((row.slug as string | null) ?? null),
   };
 }
 
-function mapHeroRow(row: any): HeroSlideItem {
+function mapHeroRow(row: Row): HeroSlideItem {
   return {
-    id: String(row.id),
-    img: row.image_url as string,
+    id: String(row.id ?? ""),
+    img: (row.image_url as string) ?? "",
     title: (row.title as string | null) ?? null,
     link_url: (row.link_url as string | null) ?? null,
   };
 }
 
-function mapPlayersGameRow(row: any): PlayersGameOfMonthItem {
+function mapPlayersGameRow(row: Row): PlayersGameOfMonthItem {
   return {
-    id: String(row.id),
-    position: Number(row.position),
+    id: String(row.id ?? ""),
+    position: Number(row.position ?? 0),
     title: (row.title as string | null) ?? null,
     image_url: (row.image_url as string | null) ?? null,
     link_url: (row.link_url as string | null) ?? null,
@@ -148,11 +158,11 @@ function mapPlayersGameRow(row: any): PlayersGameOfMonthItem {
   };
 }
 
-function mapUpcomingGameRow(row: any): UpcomingGameItem {
+function mapUpcomingGameRow(row: Row): UpcomingGameItem {
   return {
-    id: String(row.id),
-    year: Number(row.year),
-    month: Number(row.month),
+    id: String(row.id ?? ""),
+    year: Number(row.year ?? 0),
+    month: Number(row.month ?? 0),
     day: row.day === null || row.day === undefined ? null : Number(row.day),
     title: String(row.title ?? ""),
     studio: (row.studio as string | null) ?? null,
@@ -184,7 +194,7 @@ export async function adminGetTopStories(): Promise<NewsItem[]> {
     return [];
   }
 
-  return data.map(mapStoryRow);
+  return (data as Row[]).map(mapStoryRow);
 }
 
 export type AdminStoryInput = {
@@ -194,7 +204,7 @@ export type AdminStoryInput = {
   subtitle?: string;
   body?: string;
   extraImages?: string[];
-  contentBlocks?: any[];
+  contentBlocks?: unknown[];
 
   slug?: string | null;
   metaTitle?: string | null;
@@ -215,7 +225,11 @@ export async function adminCreateStory(input: AdminStoryInput) {
   const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  const effectiveSlug = await ensureUniqueSlug(supabase, "top_stories", baseSlug);
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase as unknown as SupabaseLike,
+    "top_stories",
+    baseSlug,
+  );
 
   const effectiveMetaTitle =
     (input.metaTitle && input.metaTitle.trim()) || baseTitle || null;
@@ -258,7 +272,7 @@ export async function adminCreateStory(input: AdminStoryInput) {
     throw new Error(error?.message || "Failed to create story");
   }
 
-  return mapStoryRow(data);
+  return mapStoryRow(data as Row);
 }
 
 export async function adminUpdateStory(id: string, input: AdminStoryInput) {
@@ -269,7 +283,7 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
   const effectiveSlug = await ensureUniqueSlug(
-    supabase,
+    supabase as unknown as SupabaseLike,
     "top_stories",
     baseSlug,
     id,
@@ -317,7 +331,7 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
     throw new Error(error?.message || "Failed to update story");
   }
 
-  return mapStoryRow(data);
+  return mapStoryRow(data as Row);
 }
 
 export async function adminDeleteStory(id: string) {
@@ -354,7 +368,7 @@ export type AdminRatingInput = {
   hours_all_styles?: number | null;
 
   trailer_url?: string | null;
-  gallery_images?: any[] | null;
+  gallery_images?: unknown[] | null;
 
   review_body?: string | null;
   reviewer_name?: string | null;
@@ -375,7 +389,7 @@ export async function adminGetRatings(): Promise<RatingItem[]> {
     return [];
   }
 
-  return data.map(mapRatingRow);
+  return (data as Row[]).map(mapRatingRow);
 }
 
 export async function adminCreateRating(input: AdminRatingInput) {
@@ -385,7 +399,11 @@ export async function adminCreateRating(input: AdminRatingInput) {
   const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  const effectiveSlug = await ensureUniqueSlug(supabase, "ratings", baseSlug);
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase as unknown as SupabaseLike,
+    "ratings",
+    baseSlug,
+  );
 
   const { data, error } = await supabase
     .from("ratings")
@@ -423,7 +441,7 @@ export async function adminCreateRating(input: AdminRatingInput) {
     throw new Error(error?.message || "Failed to create rating");
   }
 
-  return mapRatingRow(data);
+  return mapRatingRow(data as Row);
 }
 
 export async function adminUpdateRating(id: string, input: AdminRatingInput) {
@@ -433,7 +451,12 @@ export async function adminUpdateRating(id: string, input: AdminRatingInput) {
   const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  const effectiveSlug = await ensureUniqueSlug(supabase, "ratings", baseSlug, id);
+  const effectiveSlug = await ensureUniqueSlug(
+    supabase as unknown as SupabaseLike,
+    "ratings",
+    baseSlug,
+    id,
+  );
 
   const { data, error } = await supabase
     .from("ratings")
@@ -472,7 +495,7 @@ export async function adminUpdateRating(id: string, input: AdminRatingInput) {
     throw new Error(error?.message || "Failed to update rating");
   }
 
-  return mapRatingRow(data);
+  return mapRatingRow(data as Row);
 }
 
 export async function adminDeleteRating(id: string) {
@@ -501,7 +524,7 @@ export async function adminGetHeroSlides(): Promise<HeroSlideItem[]> {
     return [];
   }
 
-  return data.map(mapHeroRow);
+  return (data as Row[]).map(mapHeroRow);
 }
 
 export async function adminCreateHeroSlide(input: {
@@ -526,7 +549,7 @@ export async function adminCreateHeroSlide(input: {
     throw new Error(error?.message || "Failed to create hero slide");
   }
 
-  return mapHeroRow(data);
+  return mapHeroRow(data as Row);
 }
 
 export async function adminUpdateHeroSlide(
@@ -551,7 +574,7 @@ export async function adminUpdateHeroSlide(
     throw new Error(error?.message || "Failed to update hero slide");
   }
 
-  return mapHeroRow(data);
+  return mapHeroRow(data as Row);
 }
 
 export async function adminDeleteHeroSlide(id: string) {
@@ -584,7 +607,7 @@ export async function adminGetPlayersGameOfMonth(): Promise<
     return [];
   }
 
-  return data.map(mapPlayersGameRow);
+  return (data as Row[]).map(mapPlayersGameRow);
 }
 
 export type AdminPlayersGameOfMonthInput = {
@@ -625,7 +648,7 @@ export async function adminUpsertPlayersGameOfMonth(
     throw new Error(error?.message || "Failed to save Players game of the month");
   }
 
-  return mapPlayersGameRow(data);
+  return mapPlayersGameRow(data as Row);
 }
 
 export async function adminDeletePlayersGameOfMonth(
@@ -677,10 +700,6 @@ export async function adminDeletePlayersGameOfMonth(
 
 /* =========================================================================
  * ✅ UPCOMING GAMES (calendar image REMOVED)
- * Table: upcoming_games
- * Columns: id (uuid), year int, month int, day int null, title text,
- *          studio text null, platforms text[] null, link_url text null,
- *          details_html text null, sort_order int, created_at timestamptz
  * =======================================================================*/
 
 export async function adminGetUpcomingGames(
@@ -704,7 +723,7 @@ export async function adminGetUpcomingGames(
     return [];
   }
 
-  return data.map(mapUpcomingGameRow);
+  return (data as Row[]).map(mapUpcomingGameRow);
 }
 
 export type AdminUpcomingGameInput = {
@@ -726,7 +745,7 @@ export async function adminUpsertUpcomingGame(
 ): Promise<UpcomingGameItem> {
   const supabase = await createClient();
 
-  const payload: any = {
+  const payload = {
     year: Number(input.year),
     month: Number(input.month),
     day: input.day === undefined ? null : input.day,
@@ -755,7 +774,7 @@ export async function adminUpsertUpcomingGame(
       console.error("adminUpsertUpcomingGame(update) error:", error);
       throw new Error(error?.message || "Failed to update upcoming game");
     }
-    return mapUpcomingGameRow(data);
+    return mapUpcomingGameRow(data as Row);
   }
 
   const { data, error } = await supabase
@@ -771,7 +790,7 @@ export async function adminUpsertUpcomingGame(
     throw new Error(error?.message || "Failed to create upcoming game");
   }
 
-  return mapUpcomingGameRow(data);
+  return mapUpcomingGameRow(data as Row);
 }
 
 export async function adminDeleteUpcomingGame(id: string) {

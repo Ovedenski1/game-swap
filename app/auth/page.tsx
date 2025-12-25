@@ -3,25 +3,36 @@
 
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 export default function AuthPage() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const supabase = createClient();
+
+  const supabase = useMemo(() => createClient(), []);
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // If already logged in → send to home
+  const nextUrl = useMemo(() => {
+    const next = searchParams.get("next");
+    if (!next) return "/";
+    // avoid open redirects: only allow same-site paths
+    if (!next.startsWith("/")) return "/";
+    return next;
+  }, [searchParams]);
+
+  // If already logged in → redirect
   useEffect(() => {
     if (!authLoading && user) {
-      router.push("/");
+      router.push(nextUrl);
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, nextUrl]);
 
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -30,30 +41,33 @@ export default function AuthPage() {
 
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error: signUpErr } = await supabase.auth.signUp({
           email,
           password,
         });
 
-        if (error) throw error;
+        if (signUpErr) throw signUpErr;
 
         if (data.user && !data.session) {
-          // email confirmation required
           setError("Моля, провери имейла си за линк за потвърждение.");
           return;
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-        if (error) throw error;
+        if (signInErr) throw signInErr;
       }
 
-      // on success, Supabase auth listener in AuthProvider will update `user`
-      router.push("/");
-    } catch (err: any) {
-      setError(err.message || "Неуспешна автентикация.");
+      router.push(nextUrl);
+      router.refresh();
+    } catch (err: unknown) {
+      const msg =
+        typeof err === "object" && err && "message" in err
+          ? String((err as { message?: unknown }).message || "")
+          : "";
+      setError(msg || "Неуспешна автентикация.");
     } finally {
       setLoading(false);
     }
@@ -65,7 +79,6 @@ export default function AuthPage() {
         <div className="rounded-2xl border border-white/10 bg-black/35 shadow-[0_20px_70px_rgba(0,0,0,0.45)] overflow-hidden">
           {/* Header */}
           <div className="px-6 pt-7 pb-5 border-b border-white/10 bg-black/25">
-            
             <p className="mt-1 text-sm text-white/65">
               {isSignUp ? "Създай акаунт" : "Влез в профила си"}
             </p>
@@ -118,13 +131,9 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center rounded-full bg-news px-4 py-2.5 text-sm font-semibold text-black  hover:brightness-95 disabled:opacity-60"
+              className="w-full inline-flex items-center justify-center rounded-full bg-news px-4 py-2.5 text-sm font-semibold text-black hover:brightness-95 disabled:opacity-60"
             >
-              {loading
-                ? "Моля, изчакай..."
-                : isSignUp
-                ? "Регистрация"
-                : "Вход"}
+              {loading ? "Моля, изчакай..." : isSignUp ? "Регистрация" : "Вход"}
             </button>
 
             <div className="pt-2 text-center">
@@ -133,9 +142,7 @@ export default function AuthPage() {
                 onClick={() => setIsSignUp((v) => !v)}
                 className="text-sm text-white/70 hover:text-white"
               >
-                {isSignUp
-                  ? "Имаш акаунт? Влез"
-                  : "Нямаш акаунт? Регистрирай се"}
+                {isSignUp ? "Имаш акаунт? Влез" : "Нямаш акаунт? Регистрирай се"}
               </button>
             </div>
 

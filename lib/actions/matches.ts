@@ -1,9 +1,131 @@
 // lib/actions/matches.ts
 "use server";
 
-import { UserProfile } from "@/app/profile/page";
+import { UserProfile } from "@/components/ProfilePage";
 import { createClient } from "../supabase/server";
 import type { Game } from "@/types/game";
+
+/* =========================================================================
+ * Small helpers (no `any`, keep runtime behavior stable)
+ * =======================================================================*/
+
+type Row = Record<string, unknown>;
+
+function asRow(v: unknown): Row {
+  return typeof v === "object" && v !== null ? (v as Row) : {};
+}
+
+function toStringValue(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : v == null ? fallback : String(v);
+}
+
+function toNullableString(v: unknown): string | null {
+  return v == null ? null : typeof v === "string" ? v : String(v);
+}
+
+function toNumberValue(v: unknown, fallback = 0): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toIsoStringOrNow(v: unknown): string {
+  if (typeof v === "string" && v.trim() !== "") return v;
+  return new Date().toISOString();
+}
+
+function toStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => toStringValue(x)).filter(Boolean);
+}
+
+function toPgErrorCode(err: unknown): string | undefined {
+  const code = asRow(err).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function toPgErrorName(err: unknown): string | undefined {
+  const name = asRow(err).name;
+  return typeof name === "string" ? name : undefined;
+}
+
+function mapUserProfile(uInput: unknown): UserProfile {
+  const u = asRow(uInput);
+
+  return {
+    id: toStringValue(u.id),
+    full_name: toStringValue(u.full_name),
+    username: toStringValue(u.username),
+    email: toStringValue(u.email),
+    
+    birthdate: toStringValue(u.birthdate),
+    bio: toStringValue(u.bio),
+    avatar_url: toStringValue(u.avatar_url),
+    city: (u.city == null ? null : toNullableString(u.city)) ?? null,
+    preferences: u.preferences as UserProfile["preferences"],
+    location_lat: u.location_lat as UserProfile["location_lat"],
+    location_lng: u.location_lng as UserProfile["location_lng"],
+    last_active: toIsoStringOrNow(u.last_active),
+    is_verified: Boolean(u.is_verified ?? false),
+    is_online: Boolean(u.is_online ?? false),
+    created_at: toIsoStringOrNow(u.created_at),
+    updated_at: toIsoStringOrNow(u.updated_at),
+  };
+}
+
+function mapUserProfileFromMatch(otherUserInput: unknown, matchInput: unknown): UserProfile {
+  const otherUser = asRow(otherUserInput);
+  const match = asRow(matchInput);
+
+  // This matches your previous behavior for getUserMatches:
+  // created_at/updated_at come from match.created_at.
+  return {
+    id: toStringValue(otherUser.id),
+    full_name: toStringValue(otherUser.full_name),
+    username: toStringValue(otherUser.username),
+    email: toStringValue(otherUser.email),
+    
+    birthdate: toStringValue(otherUser.birthdate),
+    bio: toStringValue(otherUser.bio),
+    avatar_url: toStringValue(otherUser.avatar_url),
+    preferences: otherUser.preferences as UserProfile["preferences"],
+    location_lat: otherUser.location_lat as UserProfile["location_lat"],
+    location_lng: otherUser.location_lng as UserProfile["location_lng"],
+    last_active: toIsoStringOrNow(otherUser.last_active),
+    is_verified: Boolean(otherUser.is_verified ?? false),
+    is_online: Boolean(otherUser.is_online ?? false),
+    created_at: toIsoStringOrNow(match.created_at),
+    updated_at: toIsoStringOrNow(match.created_at),
+  };
+}
+
+function mapGameFromRow(gInput: unknown): Game {
+  const g = asRow(gInput);
+
+  const images = Array.isArray(g.game_images)
+    ? (g.game_images as unknown[]).map((img) => toStringValue(asRow(img).url)).filter(Boolean)
+    : [];
+
+  return {
+    id: toStringValue(g.id),
+    owner_id: toStringValue(g.owner_id),
+    title: toStringValue(g.title),
+    platform: g.platform as Game["platform"],
+
+    description: toStringValue(g.description),
+    condition: toStringValue(g.condition),
+    created_at: toStringValue(g.created_at),
+    images,
+  };
+}
+
+/* =========================================================================
+ * Types
+ * =======================================================================*/
 
 export interface PotentialMatch {
   user: UserProfile;
@@ -15,7 +137,7 @@ export interface ChatSummary {
   otherUser: UserProfile;
   lastMessage: string | null;
   lastMessageTime: string; // timestamp string
-  unreadCount: number;     // 👈 add this
+  unreadCount: number;
 }
 
 /* ---------- Get potential matches for swiping ---------- */
@@ -29,12 +151,12 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
 
   // handle "Auth session missing" gracefully
   if (authErr) {
-    if (authErr.name === "AuthSessionMissingError") {
+    if (toPgErrorName(authErr) === "AuthSessionMissingError") {
       console.warn("getPotentialMatches: auth session missing (logged out).");
       return [];
     }
     console.error("getPotentialMatches auth error:", authErr);
-    throw new Error(authErr.message);
+    throw new Error((authErr as Error).message);
   }
 
   if (!user) {
@@ -52,7 +174,9 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
     console.error("Failed to fetch liked users:", likedErr);
   }
 
-  const likedIds = (likedRows ?? []).map((row) => row.to_user_id as string);
+  const likedIds = (likedRows as unknown[] | null | undefined ?? []).map((row) =>
+    toStringValue(asRow(row).to_user_id),
+  );
 
   /* ---------- 2) Users I already passed ---------- */
   const { data: passedRows, error: passedErr } = await supabase
@@ -64,7 +188,9 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
     console.error("Failed to fetch passed users:", passedErr);
   }
 
-  const passedIds = (passedRows ?? []).map((row) => row.to_user_id as string);
+  const passedIds = (passedRows as unknown[] | null | undefined ?? []).map((row) =>
+    toStringValue(asRow(row).to_user_id),
+  );
 
   const excludedIds = new Set<string>([user.id, ...likedIds, ...passedIds]);
 
@@ -79,11 +205,11 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
     console.error("Failed to load my preferences:", meErr);
   }
 
-  const preferredPlatforms =
-    (meRow?.preferences as any)?.preferred_platforms ?? [];
+  const prefs = asRow((meRow as Row | null | undefined)?.preferences);
+  const preferredPlatforms = prefs.preferred_platforms;
 
   const platformFilter: string[] = Array.isArray(preferredPlatforms)
-    ? preferredPlatforms.filter(Boolean)
+    ? toStringArray(preferredPlatforms)
     : [];
 
   /* ---------- 4) Candidate games for OTHER users ---------- */
@@ -113,22 +239,12 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
   /* ---------- 5) Group games by owner ---------- */
   const gamesByOwner = new Map<string, Game[]>();
 
-  for (const g of candidateGames as any[]) {
-    const ownerId = g.owner_id as string;
+  for (const g of candidateGames as unknown[]) {
+    const row = asRow(g);
+    const ownerId = toNullableString(row.owner_id);
     if (!ownerId) continue;
 
-    const images = (g.game_images || []).map((img: any) => img.url as string);
-
-    const mappedGame: Game = {
-      id: g.id,
-      owner_id: ownerId,
-      title: g.title,
-      platform: g.platform,
-      description: g.description,
-      condition: g.condition,
-      created_at: g.created_at,
-      images,
-    };
+    const mappedGame = mapGameFromRow(row);
 
     const list = gamesByOwner.get(ownerId) ?? [];
     list.push(mappedGame);
@@ -152,31 +268,14 @@ export async function getPotentialMatches(): Promise<PotentialMatch[]> {
 
   /* ---------- 7) Build final list user + games ---------- */
   const potentialMatches: PotentialMatch[] =
-    users
-      ?.filter((u) => !excludedIds.has(u.id))
+    (users as unknown[] | null | undefined)
+      ?.filter((u) => !excludedIds.has(toStringValue(asRow(u).id)))
       .map((u) => {
-        const games = gamesByOwner.get(u.id) ?? [];
+        const uRow = asRow(u);
+        const userId = toStringValue(uRow.id);
+        const games = gamesByOwner.get(userId) ?? [];
 
-        const profile: UserProfile = {
-          id: u.id,
-          full_name: u.full_name,
-          username: u.username,
-          email: u.email,
-          gender: u.gender,
-          birthdate: u.birthdate,
-          bio: u.bio,
-          avatar_url: u.avatar_url,
-          city: u.city ?? null,
-          preferences: u.preferences,
-          location_lat: u.location_lat,
-          location_lng: u.location_lng,
-          last_active: u.last_active ?? new Date().toISOString(),
-          is_verified: u.is_verified ?? false,
-          is_online: u.is_online ?? false,
-          created_at: u.created_at ?? new Date().toISOString(),
-          updated_at: u.updated_at ?? new Date().toISOString(),
-        };
-
+        const profile = mapUserProfile(uRow);
         return { user: profile, games };
       }) || [];
 
@@ -192,7 +291,7 @@ export async function likeUser(toUserId: string, gameId?: string) {
     error: authErr,
   } = await supabase.auth.getUser();
 
-  if (authErr) throw new Error(authErr.message);
+  if (authErr) throw new Error((authErr as Error).message);
   if (!user) throw new Error("Not authenticated.");
 
   const { error: likeError } = await supabase.from("likes").insert({
@@ -201,7 +300,7 @@ export async function likeUser(toUserId: string, gameId?: string) {
     game_id: gameId ?? null,
   });
 
-  if (likeError && (likeError as any).code !== "23505") {
+  if (likeError && toPgErrorCode(likeError) !== "23505") {
     console.error("Failed to create like:", likeError);
     return { success: false, isMatch: false, matchedUser: null, matchId: null };
   }
@@ -213,7 +312,7 @@ export async function likeUser(toUserId: string, gameId?: string) {
     .eq("to_user_id", user.id)
     .single();
 
-  if (checkError && checkError.code !== "PGRST116") {
+  if (checkError && toPgErrorCode(checkError) !== "PGRST116") {
     console.error("Failed to check for match:", checkError);
     return { success: false, isMatch: false, matchedUser: null, matchId: null };
   }
@@ -235,12 +334,14 @@ export async function likeUser(toUserId: string, gameId?: string) {
 
   let matchId: string | null = null;
 
-  if (matchFetchErr && matchFetchErr.code !== "PGRST116") {
+  if (matchFetchErr && toPgErrorCode(matchFetchErr) !== "PGRST116") {
     console.error("Failed to fetch existing match:", matchFetchErr);
   }
 
-  if (existingMatch) {
-    matchId = existingMatch.id as string;
+  const existingMatchRow = existingMatch ? asRow(existingMatch) : null;
+
+  if (existingMatchRow) {
+    matchId = toNullableString(existingMatchRow.id);
   } else {
     const { data: newMatch, error: matchInsertErr } = await supabase
       .from("matches")
@@ -255,7 +356,7 @@ export async function likeUser(toUserId: string, gameId?: string) {
     if (matchInsertErr) {
       console.error("Failed to create match:", matchInsertErr);
     } else {
-      matchId = newMatch?.id as string;
+      matchId = toNullableString(asRow(newMatch).id);
     }
   }
 
@@ -286,7 +387,7 @@ export async function passUser(toUserId: string) {
     data: { user },
     error: authErr,
   } = await supabase.auth.getUser();
-  if (authErr) throw new Error(authErr.message);
+  if (authErr) throw new Error((authErr as Error).message);
   if (!user) throw new Error("Not authenticated.");
 
   const { error } = await supabase.from("passes").insert({
@@ -294,7 +395,7 @@ export async function passUser(toUserId: string) {
     to_user_id: toUserId,
   });
 
-  if (error && (error as any).code !== "23505") {
+  if (error && toPgErrorCode(error) !== "23505") {
     throw new Error("Failed to save pass");
   }
 
@@ -335,9 +436,13 @@ export async function getUserMatches() {
 
   const matchedUsers: UserProfile[] = [];
 
-  for (const match of matches || []) {
-    const otherUserId =
-      match.user1_id === user.id ? match.user2_id : match.user1_id;
+  for (const match of (matches as unknown[] | null | undefined) ?? []) {
+    const m = asRow(match);
+
+    const user1Id = toStringValue(m.user1_id);
+    const user2Id = toStringValue(m.user2_id);
+
+    const otherUserId = user1Id === user.id ? user2Id : user1Id;
 
     const { data: otherUser, error: userError } = await supabase
       .from("users")
@@ -350,36 +455,13 @@ export async function getUserMatches() {
       continue;
     }
 
-    matchedUsers.push({
-      id: otherUser.id,
-      full_name: otherUser.full_name,
-      username: otherUser.username,
-      email: otherUser.email,
-      gender: otherUser.gender,
-      birthdate: otherUser.birthdate,
-      bio: otherUser.bio,
-      avatar_url: otherUser.avatar_url,
-      preferences: otherUser.preferences,
-      location_lat: otherUser.location_lat,
-      location_lng: otherUser.location_lng,
-      last_active: otherUser.last_active ?? new Date().toISOString(),
-      is_verified: otherUser.is_verified ?? false,
-      is_online: otherUser.is_online ?? false,
-      created_at: match.created_at,
-      updated_at: match.created_at,
-    });
+    matchedUsers.push(mapUserProfileFromMatch(otherUser, m));
   }
 
   return matchedUsers;
 }
 
-// lib/actions/matches.ts
-
 /* ---------- Get chats + last message per match ---------- */
-// lib/actions/matches.ts  (only the getUserChats part)
-
-// lib/actions/matches.ts
-
 export async function getUserChats(): Promise<ChatSummary[]> {
   const supabase = await createClient();
 
@@ -413,9 +495,14 @@ export async function getUserChats(): Promise<ChatSummary[]> {
 
   const chats: ChatSummary[] = [];
 
-  for (const match of matches) {
-    const otherUserId =
-      match.user1_id === user.id ? match.user2_id : match.user1_id;
+  for (const match of matches as unknown[]) {
+    const m = asRow(match);
+
+    const matchId = toStringValue(m.id);
+    const user1Id = toStringValue(m.user1_id);
+    const user2Id = toStringValue(m.user2_id);
+
+    const otherUserId = user1Id === user.id ? user2Id : user1Id;
 
     // 1) load other user
     const { data: otherUser, error: userErr } = await supabase
@@ -433,70 +520,54 @@ export async function getUserChats(): Promise<ChatSummary[]> {
     const { data: lastMsgRow, error: msgErr } = await supabase
       .from("chat_messages")
       .select("content, created_at, sender_id")
-      .eq("match_id", match.id)
+      .eq("match_id", matchId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (msgErr && msgErr.code !== "PGRST116") {
+    if (msgErr && toPgErrorCode(msgErr) !== "PGRST116") {
       console.error("getUserChats last message error:", msgErr);
     }
+
+    const lastMsg = lastMsgRow ? asRow(lastMsgRow) : null;
 
     // 3) unread?  (has the other person sent something after my last_read_at)
     let unreadCount = 0;
 
-    if (lastMsgRow) {
+    if (lastMsg) {
       const { data: readRow, error: readErr } = await supabase
         .from("chat_reads")
         .select("last_read_at")
-        .eq("match_id", match.id)
+        .eq("match_id", matchId)
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (readErr && readErr.code !== "PGRST116") {
+      if (readErr && toPgErrorCode(readErr) !== "PGRST116") {
         console.error("getUserChats readRow error:", readErr);
       }
 
-      const lastReadAt = readRow?.last_read_at
-        ? new Date(readRow.last_read_at)
-        : null;
-      const lastMsgAt = new Date(lastMsgRow.created_at);
+      const read = readRow ? asRow(readRow) : null;
 
-      if (
-        lastMsgRow.sender_id !== user.id && // message from OTHER user
-        (!lastReadAt || lastMsgAt > lastReadAt)
-      ) {
+      const lastReadAt =
+        read?.last_read_at != null ? new Date(toStringValue(read.last_read_at)) : null;
+      const lastMsgAt = new Date(toStringValue(lastMsg.created_at));
+
+      const senderId = toStringValue(lastMsg.sender_id);
+
+      if (senderId !== user.id && (!lastReadAt || lastMsgAt > lastReadAt)) {
         unreadCount = 1; // we only care "has unread?", not exact number
       }
     }
 
-    const profile: UserProfile = {
-      id: otherUser.id,
-      full_name: otherUser.full_name,
-      username: otherUser.username,
-      email: otherUser.email,
-      gender: otherUser.gender,
-      birthdate: otherUser.birthdate,
-      bio: otherUser.bio,
-      avatar_url: otherUser.avatar_url,
-      city: otherUser.city ?? null,
-      preferences: otherUser.preferences,
-      location_lat: otherUser.location_lat,
-      location_lng: otherUser.location_lng,
-      last_active: otherUser.last_active ?? new Date().toISOString(),
-      is_verified: otherUser.is_verified ?? false,
-      is_online: otherUser.is_online ?? false,
-      created_at: otherUser.created_at ?? new Date().toISOString(),
-      updated_at: otherUser.updated_at ?? new Date().toISOString(),
-    };
+    const profile = mapUserProfile(otherUser);
 
     chats.push({
-      matchId: match.id as string,
+      matchId,
       otherUser: profile,
-      lastMessage: lastMsgRow?.content ?? null,
+      lastMessage: lastMsg ? toNullableString(lastMsg.content) : null,
       lastMessageTime:
-        lastMsgRow?.created_at ??
-        match.created_at ??
+        (lastMsg ? toNullableString(lastMsg.created_at) : null) ??
+        toNullableString(m.created_at) ??
         new Date().toISOString(),
       unreadCount,
     });
@@ -505,18 +576,11 @@ export async function getUserChats(): Promise<ChatSummary[]> {
   // newest chats first
   chats.sort(
     (a, b) =>
-      new Date(b.lastMessageTime).getTime() -
-      new Date(a.lastMessageTime).getTime(),
+      new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime(),
   );
 
   return chats;
 }
-
-
-
-
-
-
 
 /* ---------- Swap context ---------- */
 export async function getSwapContext(
@@ -532,7 +596,7 @@ export async function getSwapContext(
     error: authErr,
   } = await supabase.auth.getUser();
 
-  if (authErr) throw new Error(authErr.message);
+  if (authErr) throw new Error((authErr as Error).message);
   if (!user) throw new Error("Not authenticated.");
 
   const { data: myLikes, error: myLikesErr } = await supabase
@@ -546,8 +610,8 @@ export async function getSwapContext(
     console.error("getSwapContext myLikes error:", myLikesErr);
   }
 
-  const myGameIds = (myLikes || [])
-    .map((row) => row.game_id as string)
+  const myGameIds = ((myLikes as unknown[] | null | undefined) ?? [])
+    .map((row) => toStringValue(asRow(row).game_id))
     .filter(Boolean);
 
   const { data: theirLikes, error: theirLikesErr } = await supabase
@@ -561,8 +625,8 @@ export async function getSwapContext(
     console.error("getSwapContext theirLikes error:", theirLikesErr);
   }
 
-  const theirGameIds = (theirLikes || [])
-    .map((row) => row.game_id as string)
+  const theirGameIds = ((theirLikes as unknown[] | null | undefined) ?? [])
+    .map((row) => toStringValue(asRow(row).game_id))
     .filter(Boolean);
 
   if (myGameIds.length === 0 && theirGameIds.length === 0) {
@@ -595,29 +659,13 @@ export async function getSwapContext(
     console.error("getSwapContext theirGames error:", theirGamesRes.error);
   }
 
-  const myWantedGames: Game[] = (myGamesRes.data || []).map((g: any) => ({
-    id: g.id,
-    owner_id: g.owner_id,
-    title: g.title,
-    platform: g.platform,
-    description: g.description,
-    condition: g.condition,
-    created_at: g.created_at,
-    images: (g.game_images || []).map((img: any) => img.url),
-  }));
-
-  const theirWantedGames: Game[] = (theirGamesRes.data || []).map(
-    (g: any) => ({
-      id: g.id,
-      owner_id: g.owner_id,
-      title: g.title,
-      platform: g.platform,
-      description: g.description,
-      condition: g.condition,
-      created_at: g.created_at,
-      images: (g.game_images || []).map((img: any) => img.url),
-    }),
+  const myWantedGames: Game[] = ((myGamesRes.data as unknown[] | null | undefined) ?? []).map(
+    (g) => mapGameFromRow(g),
   );
+
+  const theirWantedGames: Game[] = (
+    (theirGamesRes.data as unknown[] | null | undefined) ?? []
+  ).map((g) => mapGameFromRow(g));
 
   return { myWantedGames, theirWantedGames };
 }

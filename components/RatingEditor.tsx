@@ -7,8 +7,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { nanoid } from "nanoid";
 
-import { adminCreateRating, adminUpdateRating } from "@/lib/actions/admin-content";
-import type { RatingItem } from "@/lib/actions/admin-content";
+import {
+  adminCreateRating,
+  adminUpdateRating,
+  type RatingItem,
+  type AdminRatingInput,
+} from "@/lib/actions/admin-content";
 
 import NewsImageUpload from "./NewsImageUpload";
 import StoryGallery from "./StoryGallery";
@@ -20,7 +24,33 @@ import { PlatformIcons } from "./PlatformIcons";
 
 type RatingEditorProps = {
   mode: "create" | "edit";
-  initial?: (RatingItem & { [key: string]: any }) | null;
+  initial?: (RatingItem & Partial<RatingInitialExtras>) | null;
+};
+
+type RatingInitialExtras = {
+  image_url?: string | null;
+
+  developer?: string | null;
+  publisher?: string | null;
+  release_date?: string | null;
+
+  platforms?: string[] | string | null;
+  genres?: string[] | string | null;
+
+  hours_main?: number | null;
+  hours_main_plus?: number | null;
+  hours_completionist?: number | null;
+  hours_all_styles?: number | null;
+
+  trailer_url?: string | null;
+  gallery_images?: { url: string; caption?: string | null }[] | null;
+
+  review_body?: string | null;
+  reviewer_name?: string | null;
+  reviewer_avatar_url?: string | null;
+  verdict_label?: string | null;
+  summary?: string | null;
+  slug?: string | null;
 };
 
 type GalleryItem = { url: string; caption?: string };
@@ -30,6 +60,18 @@ type AdminAuthor = {
   name: string;
   role?: string | null;
   avatar_url?: string | null;
+};
+
+type AuthorsApiResponse = {
+  authors?: Array<{
+    id: string | number;
+    name?: string | null;
+    full_name?: string | null;
+    role?: string | null;
+    authorRole?: string | null;
+    avatar_url?: string | null;
+    avatarUrl?: string | null;
+  }>;
 };
 
 function parseList(input: string): string[] {
@@ -49,7 +91,8 @@ function getYouTubeEmbedUrl(url: string | undefined): string | null {
   if (!url) return null;
   try {
     const u = new URL(url);
-    if (u.hostname === "youtu.be") return `https://www.youtube.com/embed${u.pathname}`;
+    if (u.hostname === "youtu.be")
+      return `https://www.youtube.com/embed${u.pathname}`;
     if (u.hostname.endsWith("youtube.com")) {
       if (u.pathname.startsWith("/embed/")) return url;
       const v = u.searchParams.get("v");
@@ -97,13 +140,23 @@ type ComboBoxProps = {
   helperText?: string;
 };
 
-function ComboBox({ label, placeholder, options, selected, onChangeSelected, allowCustom = true, helperText }: ComboBoxProps) {
+function ComboBox({
+  label,
+  placeholder,
+  options,
+  selected,
+  onChangeSelected,
+  allowCustom = true,
+  helperText,
+}: ComboBoxProps) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const normalizedOptions = useMemo(() => {
-    const uniq = Array.from(new Set(options.map((o) => o.trim()).filter(Boolean)));
+    const uniq = Array.from(
+      new Set(options.map((o) => o.trim()).filter(Boolean)),
+    );
     uniq.sort((a, b) => a.localeCompare(b, "bg"));
     return uniq;
   }, [options]);
@@ -129,7 +182,9 @@ function ComboBox({ label, placeholder, options, selected, onChangeSelected, all
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as any)) setOpen(false);
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (!wrapRef.current.contains(target)) setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -151,7 +206,6 @@ function ComboBox({ label, placeholder, options, selected, onChangeSelected, all
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                // If there is an exact match in filtered, pick first; else custom (if allowed)
                 if (filtered.length > 0) addValue(filtered[0]);
                 else if (allowCustom) addValue(q);
               }
@@ -176,7 +230,10 @@ function ComboBox({ label, placeholder, options, selected, onChangeSelected, all
             <div className="max-h-56 overflow-auto p-1">
               {filtered.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-white/60">
-                  Няма резултати{allowCustom ? ". Натисни Enter, за да добавиш „" + q.trim() + "“." : "."}
+                  Няма резултати
+                  {allowCustom
+                    ? `. Натисни Enter, за да добавиш „${q.trim()}“.`
+                    : "."}
                 </div>
               ) : (
                 filtered.map((opt) => {
@@ -191,11 +248,21 @@ function ComboBox({ label, placeholder, options, selected, onChangeSelected, all
                         setOpen(false);
                       }}
                       className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
-                        isSelected ? "text-white/35" : "text-white/85 hover:bg-white/10"
+                        isSelected
+                          ? "text-white/35"
+                          : "text-white/85 hover:bg-white/10"
                       }`}
                     >
                       <span>{opt}</span>
-                      {isSelected ? <span className="text-[11px] text-white/35">Добавено</span> : <span className="text-[11px] text-white/50">Добави</span>}
+                      {isSelected ? (
+                        <span className="text-[11px] text-white/35">
+                          Добавено
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-white/50">
+                          Добави
+                        </span>
+                      )}
                     </button>
                   );
                 })
@@ -213,7 +280,10 @@ function ComboBox({ label, placeholder, options, selected, onChangeSelected, all
             .slice()
             .sort((a, b) => a.localeCompare(b, "bg"))
             .map((g) => (
-              <span key={g} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80">
+              <span
+                key={g}
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80"
+              >
                 {g}
                 <button
                   type="button"
@@ -273,13 +343,25 @@ function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
   return (
     <div className="space-y-1 mb-2">
       <div className="flex items-center gap-2 text-[11px] text-white/70">
-        <button type="button" onClick={() => exec("bold")} className="rounded border border-white/30 px-2 py-0.5 font-bold hover:bg-white/10">
+        <button
+          type="button"
+          onClick={() => exec("bold")}
+          className="rounded border border-white/30 px-2 py-0.5 font-bold hover:bg-white/10"
+        >
           B
         </button>
-        <button type="button" onClick={() => exec("italic")} className="rounded border border-white/30 px-2 py-0.5 italic hover:bg-white/10">
+        <button
+          type="button"
+          onClick={() => exec("italic")}
+          className="rounded border border-white/30 px-2 py-0.5 italic hover:bg-white/10"
+        >
           I
         </button>
-        <button type="button" onClick={() => exec("underline")} className="rounded border border-white/30 px-2 py-0.5 underline hover:bg-white/10">
+        <button
+          type="button"
+          onClick={() => exec("underline")}
+          className="rounded border border-white/30 px-2 py-0.5 underline hover:bg-white/10"
+        >
           U
         </button>
 
@@ -317,13 +399,24 @@ type HeadingLevel = 2 | 3;
 type MediaBlock = { id: string; type: "media" };
 
 type ParagraphBlock = { id: string; type: "paragraph"; text: string };
-type HeadingBlock = { id: string; type: "heading"; level: HeadingLevel; text: string };
+type HeadingBlock = {
+  id: string;
+  type: "heading";
+  level: HeadingLevel;
+  text: string;
+};
 type ImageBlock = { id: string; type: "image"; url: string; caption: string };
 type QuoteBlock = { id: string; type: "quote"; text: string };
 type DividerBlock = { id: string; type: "divider" };
 
 export type EmbedSize = "default" | "wide" | "compact";
-type EmbedBlock = { id: string; type: "embed"; url: string; title?: string; size?: EmbedSize };
+type EmbedBlock = {
+  id: string;
+  type: "embed";
+  url: string;
+  title?: string;
+  size?: EmbedSize;
+};
 
 type CardVariant = "default" | "compact" | "featured";
 type CardMediaType = "nonei" | "none" | "video" | "imageGrid"; // kept as is
@@ -355,7 +448,16 @@ type GalleryBlock = {
   withBackground?: boolean;
 };
 
-type ReviewBlock = MediaBlock | ParagraphBlock | HeadingBlock | ImageBlock | QuoteBlock | DividerBlock | CardBlock | EmbedBlock | GalleryBlock;
+type ReviewBlock =
+  | MediaBlock
+  | ParagraphBlock
+  | HeadingBlock
+  | ImageBlock
+  | QuoteBlock
+  | DividerBlock
+  | CardBlock
+  | EmbedBlock
+  | GalleryBlock;
 
 /**
  * ✅ Key behavior (updated):
@@ -393,7 +495,9 @@ function normalizeBlocksWithMedia(input: ReviewBlock[]): ReviewBlock[] {
   }
 
   const mediaIdx2 = out.findIndex((b) => b.type === "media");
-  const beforeCount = out.slice(0, mediaIdx2).filter((b) => b.type !== "media").length;
+  const beforeCount = out
+    .slice(0, mediaIdx2)
+    .filter((b) => b.type !== "media").length;
   if (beforeCount === 0) {
     out.unshift({ id: nanoid(), type: "paragraph", text: "" });
   }
@@ -403,8 +507,12 @@ function normalizeBlocksWithMedia(input: ReviewBlock[]): ReviewBlock[] {
 
 function splitByMedia(blocks: ReviewBlock[]) {
   const idx = blocks.findIndex((b) => b.type === "media");
-  const before = idx >= 0 ? blocks.slice(0, idx).filter((b) => b.type !== "media") : [];
-  const after = idx >= 0 ? blocks.slice(idx + 1).filter((b) => b.type !== "media") : blocks.filter((b) => b.type !== "media");
+  const before =
+    idx >= 0 ? blocks.slice(0, idx).filter((b) => b.type !== "media") : [];
+  const after =
+    idx >= 0
+      ? blocks.slice(idx + 1).filter((b) => b.type !== "media")
+      : blocks.filter((b) => b.type !== "media");
   const hasMarker = idx >= 0;
   return { before, after, hasMarker, idx };
 }
@@ -447,10 +555,22 @@ function createBlock(type: ReviewBlock["type"]): ReviewBlock {
       };
 
     case "embed":
-      return { id: nanoid(), type: "embed", url: "", title: "", size: "default" };
+      return {
+        id: nanoid(),
+        type: "embed",
+        url: "",
+        title: "",
+        size: "default",
+      };
 
     case "gallery":
-      return { id: nanoid(), type: "gallery", title: "", images: [], withBackground: false };
+      return {
+        id: nanoid(),
+        type: "gallery",
+        title: "",
+        images: [],
+        withBackground: false,
+      };
   }
 }
 
@@ -468,7 +588,9 @@ function blocksToPlainText(blocks: ReviewBlock[]): string {
         case "image":
           return b.caption ?? "";
         case "card":
-          return [b.title || "", (b.body || "").replace(/<[^>]+>/g, "")].filter(Boolean).join(". ");
+          return [b.title || "", (b.body || "").replace(/<[^>]+>/g, "")]
+            .filter(Boolean)
+            .join(". ");
         case "gallery":
           return (b.images ?? [])
             .map((img) => img.caption || "")
@@ -516,7 +638,8 @@ function normalizeEmbedInput(raw: string): string {
 }
 
 function cardVariantClasses(variant: string | undefined) {
-  const base = "mt-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm transition-all shadow-[0_14px_40px_rgba(0,0,0,0.45)]";
+  const base =
+    "mt-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm transition-all shadow-[0_14px_40px_rgba(0,0,0,0.45)]";
   switch (variant) {
     case "compact":
       return `${base} text-xs sm:text-sm py-3 px-3`;
@@ -532,7 +655,15 @@ function cardVariantClasses(variant: string | undefined) {
 /* COMPONENT                                                              */
 /* ====================================================================== */
 
-const PLATFORM_OPTIONS = ["PC", "PS5", "PS4", "Xbox Series X|S", "Xbox One", "Nintendo Switch", "Nintendo Switch 2",];
+const PLATFORM_OPTIONS = [
+  "PC",
+  "PS5",
+  "PS4",
+  "Xbox Series X|S",
+  "Xbox One",
+  "Nintendo Switch",
+  "Nintendo Switch 2",
+];
 
 const GENRE_OPTIONS = [
   "Action",
@@ -587,9 +718,10 @@ const GENRE_OPTIONS = [
   "Visual Novel",
 ];
 
-function coerceStringArray(v: any): string[] {
+function coerceStringArray(v: unknown): string[] {
   if (!v) return [];
-  if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
+  if (Array.isArray(v))
+    return v.map(String).map((s) => s.trim()).filter(Boolean);
   if (typeof v === "string") return parseList(v);
   return [];
 }
@@ -627,10 +759,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       try {
         const res = await fetch("/api/admin/authors");
         if (!res.ok) return;
-        const json = await res.json();
+
+        const json = (await res.json()) as AuthorsApiResponse;
 
         const list: AdminAuthor[] = Array.isArray(json.authors)
-          ? json.authors.map((a: any) => ({
+          ? json.authors.map((a) => ({
               id: String(a.id),
               name: a.name ?? a.full_name ?? "",
               role: a.role ?? a.authorRole ?? null,
@@ -640,7 +773,7 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
         setAuthors(list);
 
-        const currentName = (((initial as any)?.reviewer_name as string | undefined) ?? "");
+        const currentName = initial?.reviewer_name ?? "";
         if (currentName) {
           const match = list.find((a) => a.name === currentName);
           if (match) setSelectedAuthorId(match.id);
@@ -649,6 +782,7 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
         console.error("Failed to load authors for ratings editor", err);
       }
     }
+
     loadAuthors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -656,41 +790,61 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
   /* ---------- basic info ---------- */
 
   const [title, setTitle] = useState(initial?.game_title ?? "");
-  const [slug, setSlug] = useState((initial as any)?.slug ?? "");
-  const [score, setScore] = useState(initial?.score != null ? String(initial.score) : "");
+  const [slug, setSlug] = useState(initial?.slug ?? "");
+  const [score, setScore] = useState(
+    initial?.score != null ? String(initial.score) : "",
+  );
 
-  const [imageUrl, setImageUrl] = useState(((initial as any)?.image_url as string | undefined) ?? (initial?.img as string | undefined) ?? "");
+  const [imageUrl, setImageUrl] = useState(
+    initial?.image_url ?? initial?.img ?? "",
+  );
 
   /* ---------- game details ---------- */
 
-  const [developer, setDeveloper] = useState((initial as any)?.developer ?? "");
-  const [publisher, setPublisher] = useState((initial as any)?.publisher ?? "");
+  const [developer, setDeveloper] = useState(initial?.developer ?? "");
+  const [publisher, setPublisher] = useState(initial?.publisher ?? "");
 
   // ✅ date with calendar: keep ISO YYYY-MM-DD in state (works with <input type="date">)
-  const [releaseDateISO, setReleaseDateISO] = useState(((initial as any)?.release_date as string | undefined) ?? "");
+  const [releaseDateISO, setReleaseDateISO] = useState(
+    initial?.release_date ?? "",
+  );
 
   // ✅ platforms as checkboxes
-  const [platformsSelected, setPlatformsSelected] = useState<string[]>(() => coerceStringArray((initial as any)?.platforms));
+  const [platformsSelected, setPlatformsSelected] = useState<string[]>(() =>
+    coerceStringArray(initial?.platforms),
+  );
 
   // ✅ genres as searchable dropdown + removable list
-  const [genresSelected, setGenresSelected] = useState<string[]>(() => coerceStringArray((initial as any)?.genres));
+  const [genresSelected, setGenresSelected] = useState<string[]>(() =>
+    coerceStringArray(initial?.genres),
+  );
 
   /* ---------- how long to beat ---------- */
 
-  const [hoursMainInput, setHoursMainInput] = useState((initial as any)?.hours_main != null ? String((initial as any).hours_main) : "");
-  const [hoursMainPlusInput, setHoursMainPlusInput] = useState((initial as any)?.hours_main_plus != null ? String((initial as any).hours_main_plus) : "");
-  const [hoursCompletionistInput, setHoursCompletionistInput] = useState((initial as any)?.hours_completionist != null ? String((initial as any).hours_completionist) : "");
-  const [hoursAllStylesInput, setHoursAllStylesInput] = useState((initial as any)?.hours_all_styles != null ? String((initial as any).hours_all_styles) : "");
+  const [hoursMainInput, setHoursMainInput] = useState(
+    initial?.hours_main != null ? String(initial.hours_main) : "",
+  );
+  const [hoursMainPlusInput, setHoursMainPlusInput] = useState(
+    initial?.hours_main_plus != null ? String(initial.hours_main_plus) : "",
+  );
+  const [hoursCompletionistInput, setHoursCompletionistInput] = useState(
+    initial?.hours_completionist != null
+      ? String(initial.hours_completionist)
+      : "",
+  );
+  const [hoursAllStylesInput, setHoursAllStylesInput] = useState(
+    initial?.hours_all_styles != null ? String(initial.hours_all_styles) : "",
+  );
 
   /* ---------- media (still stored in rating row) ---------- */
 
-  const [trailerUrl, setTrailerUrl] = useState(((initial as any)?.trailer_url as string | undefined) ?? "");
+  const [trailerUrl, setTrailerUrl] = useState(initial?.trailer_url ?? "");
 
   const initialGallery: GalleryItem[] =
-    Array.isArray((initial as any)?.gallery_images) && (initial as any).gallery_images.length
-      ? (initial as any).gallery_images.map((g: any) => ({
-          url: g.url as string,
-          caption: g.caption as string | undefined,
+    Array.isArray(initial?.gallery_images) && initial.gallery_images.length
+      ? initial.gallery_images.map((g) => ({
+          url: String(g.url ?? ""),
+          caption: g.caption ?? undefined,
         }))
       : [];
 
@@ -698,25 +852,44 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
   /* ---------- review ---------- */
 
-  const [verdictLabel, setVerdictLabel] = useState(((initial as any)?.verdict_label as string | undefined) ?? "Ревю");
+  const [verdictLabel, setVerdictLabel] = useState(
+    initial?.verdict_label ?? "Ревю",
+  );
 
   const [blocks, setBlocks] = useState<ReviewBlock[]>(() => {
-    const existing = (((initial as any)?.review_body as string | undefined) ?? "");
+    const existing = initial?.review_body ?? "";
 
     if (!existing.trim()) {
-      return normalizeBlocksWithMedia([createBlock("paragraph"), createBlock("paragraph")]);
+      return normalizeBlocksWithMedia([
+        createBlock("paragraph"),
+        createBlock("paragraph"),
+      ]);
     }
 
     try {
-      const parsed = JSON.parse(existing);
-      if (Array.isArray(parsed)) return normalizeBlocksWithMedia(parsed as ReviewBlock[]);
-    } catch {}
+      const parsed = JSON.parse(existing) as unknown;
+      if (Array.isArray(parsed))
+        return normalizeBlocksWithMedia(parsed as ReviewBlock[]);
+    } catch {
+      // fall through
+    }
 
-    return normalizeBlocksWithMedia([{ id: nanoid(), type: "paragraph", text: existing.replace(/\n/g, "<br />") } as ParagraphBlock, createBlock("paragraph")]);
+    return normalizeBlocksWithMedia([
+      {
+        id: nanoid(),
+        type: "paragraph",
+        text: existing.replace(/\n/g, "<br />"),
+      },
+      createBlock("paragraph"),
+    ]);
   });
 
-  const [reviewerName, setReviewerName] = useState(((initial as any)?.reviewer_name as string | undefined) ?? "");
-  const [reviewerAvatarUrl, setReviewerAvatarUrl] = useState(((initial as any)?.reviewer_avatar_url as string | undefined) ?? "");
+  const [reviewerName, setReviewerName] = useState(
+    initial?.reviewer_name ?? "",
+  );
+  const [reviewerAvatarUrl, setReviewerAvatarUrl] = useState(
+    initial?.reviewer_avatar_url ?? "",
+  );
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -734,7 +907,14 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
   function updateBlock<T extends ReviewBlock>(id: string, patch: Partial<T>) {
     if (id === MEDIA_BLOCK_ID) return;
-    setBlocks((prev) => normalizeBlocksWithMedia(prev.map((b) => (b.id === id ? ({ ...b, ...patch } as any) : b))));
+
+    setBlocks((prev) =>
+      normalizeBlocksWithMedia(
+        prev.map((b) =>
+          b.id === id ? ({ ...b, ...patch } as ReviewBlock) : b,
+        ),
+      ),
+    );
   }
 
   function addBlockAfter(id: string, type: Exclude<ReviewBlock["type"], "media">) {
@@ -749,7 +929,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
   function removeBlock(id: string) {
     if (id === MEDIA_BLOCK_ID) return;
-    setBlocks((prev) => normalizeBlocksWithMedia(prev.filter((b) => b.id !== id)));
+    setBlocks((prev) =>
+      normalizeBlocksWithMedia(prev.filter((b) => b.id !== id)),
+    );
   }
 
   function moveBlock(id: string, direction: "up" | "down") {
@@ -773,7 +955,7 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       const idx = prev.findIndex((b) => b.id === id);
       if (idx === -1) return prev;
       const original = prev[idx];
-      const clone: ReviewBlock = { ...(original as any), id: nanoid() };
+      const clone: ReviewBlock = { ...(original as ReviewBlock), id: nanoid() };
       const copy = [...prev];
       copy.splice(idx + 1, 0, clone);
       return normalizeBlocksWithMedia(copy);
@@ -791,7 +973,8 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
     try {
       if (!title.trim()) throw new Error("Заглавието на играта е задължително.");
       const parsedScore = parseNumber(score);
-      if (parsedScore == null) throw new Error("Оценката трябва да е валидно число.");
+      if (parsedScore == null)
+        throw new Error("Оценката трябва да е валидно число.");
       if (!imageUrl.trim()) throw new Error("Корица/изображение е задължително.");
 
       const platforms = platformsSelected.map((p) => p.trim()).filter(Boolean);
@@ -811,19 +994,18 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       const autoSummary = buildAutoSummary(reviewPlain) ?? "";
       const reviewJson = JSON.stringify(blocks);
 
-      const payload: any = {
+      const payload: AdminRatingInput = {
         game_title: title.trim(),
         img: imageUrl.trim(),
         score: parsedScore,
 
-        subtitle: autoSummary || null,
+        subtitle: autoSummary || undefined,
         summary: autoSummary || null,
         slug: slug.trim() || null,
 
         developer: developer.trim() || null,
         publisher: publisher.trim() || null,
 
-        // store ISO date in DB; UI is calendar-based and preview shows BG format
         release_date: releaseDateISO.trim() || null,
 
         platforms: platforms.length ? platforms : null,
@@ -849,9 +1031,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       setSuccess("Записано!");
       router.refresh();
       setTimeout(() => setSuccess(null), 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || "Грешка при запис.");
+      const msg =
+        err instanceof Error ? err.message : "Грешка при запис.";
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -871,23 +1055,27 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
     .filter((g) => g.url.trim())
     .map((g, idx) => ({ id: `g-${idx}`, url: g.url.trim(), caption: g.caption }));
 
-  const { before: blocksBeforeMedia, after: blocksAfterMedia, hasMarker } = useMemo(() => splitByMedia(blocks), [blocks]);
+  const { before: blocksBeforeMedia, after: blocksAfterMedia, hasMarker } = useMemo(
+    () => splitByMedia(blocks),
+    [blocks],
+  );
 
   /* ---------- preview block renderer ---------- */
 
   function renderBlockLikePage(block: ReviewBlock, index: number) {
-    const key = (block as any).id ?? index;
+    const key = block.id ?? String(index);
 
     switch (block.type) {
       case "media":
         return null;
 
       case "heading": {
-        const level = (block as any).level ?? 2;
-        const text = (block as any).text ?? "";
+        const level = block.level ?? 2;
+        const text = block.text ?? "";
         if (!text) return null;
 
-        const baseClasses = "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
+        const baseClasses =
+          "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
         const h2Classes = "text-2xl sm:text-[26px]";
         const h3Classes = "text-xl sm:text-[20px]";
 
@@ -903,22 +1091,35 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       }
 
       case "paragraph": {
-        const text = (block as any).text ?? "";
+        const text = block.text ?? "";
         if (!text) return null;
         return (
-          <div key={key} className="text-sm sm:text-base leading-relaxed text-white/85 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: text }} />
+          <div
+            key={key}
+            className="text-sm sm:text-base leading-relaxed text-white/85 whitespace-pre-wrap break-words"
+            dangerouslySetInnerHTML={{ __html: text }}
+          />
         );
       }
 
       case "image": {
-        const url = (block as any).url ?? "";
-        const caption = (block as any).caption ?? "";
+        const url = block.url ?? "";
+        const caption = block.caption ?? "";
         if (!url) return null;
 
         return (
-          <figure key={key} className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
+          <figure
+            key={key}
+            className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40"
+          >
             <div className="relative w-full aspect-[16/9]">
-              <Image src={url} alt={caption || "Скрийншот"} fill sizes="(min-width: 1200px) 900px, 100vw" className="object-cover" />
+              <Image
+                src={url}
+                alt={caption || "Скрийншот"}
+                fill
+                sizes="(min-width: 1200px) 900px, 100vw"
+                className="object-cover"
+              />
             </div>
             {caption && (
               <figcaption className="px-3 pb-3 pt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
@@ -930,7 +1131,7 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       }
 
       case "quote": {
-        const text = (block as any).text ?? "";
+        const text = block.text ?? "";
         if (!text) return null;
         return (
           <blockquote
@@ -943,22 +1144,23 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       }
 
       case "embed": {
-        const url = (block as any).url ?? "";
-        const embedTitle = (block as any).title ?? "";
-        const size = (block as any).size as EmbedSize | undefined;
+        const url = block.url ?? "";
+        const embedTitle = block.title ?? "";
+        const size = block.size as EmbedSize | undefined;
         if (!url) return null;
         return <SocialEmbed key={key} url={url} title={embedTitle} size={size} />;
       }
 
       case "gallery": {
-        const b: any = block;
-        const title = b.title ?? "";
-        const images = Array.isArray(b.images) ? b.images.filter((img: any) => img && img.url) : [];
-        const withBackground = b.withBackground ?? false;
+        const titleText = block.title ?? "";
+        const images = Array.isArray(block.images)
+          ? block.images.filter((img) => img && img.url)
+          : [];
+        const withBackground = block.withBackground ?? false;
 
         if (!images.length) return null;
 
-        const galleryImages = images.map((img: any, imgIndex: number) => ({
+        const galleryImages = images.map((img, imgIndex) => ({
           id: img.id ?? `${key}-${imgIndex}`,
           url: img.url,
           caption: img.caption,
@@ -966,72 +1168,98 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
         return (
           <div key={key} className="mt-6 space-y-2">
-            {title && <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">{title}</h3>}
+            {titleText && (
+              <h3 className="text-xl sm:text-[20px] font-semibold text-white break-words">
+                {titleText}
+              </h3>
+            )}
             <StoryGallery images={galleryImages} withBackground={withBackground} />
           </div>
         );
       }
 
       case "card": {
-        const b: any = block;
-        const title = b.title ?? "";
-        const body = b.body ?? "";
-        const rawLinkUrl = b.linkUrl ?? "";
+        const titleText = block.title ?? "";
+        const body = block.body ?? "";
+        const rawLinkUrl = block.linkUrl ?? "";
         const linkUrl = rawLinkUrl ? normalizeUrl(rawLinkUrl) : "";
-        const linkLabel = b.linkLabel || "Виж още";
+        const linkLabel = block.linkLabel || "Виж още";
 
-        const variant: CardVariant = b.variant ?? "default";
-        const mediaType: CardMediaType = b.mediaType ?? "none";
-        const layout: CardLayout = b.layout === "mediaBottom" || b.layout === "mediaLeft" || b.layout === "mediaRight" ? b.layout : "mediaTop";
-        const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
+        const variant: CardVariant = block.variant ?? "default";
+        const mediaType: CardMediaType = block.mediaType ?? "none";
+        const layout: CardLayout =
+          block.layout === "mediaBottom" ||
+          block.layout === "mediaLeft" ||
+          block.layout === "mediaRight"
+            ? block.layout
+            : "mediaTop";
+        const cardWidth: CardWidth = block.cardWidth === "full" ? "full" : "narrow";
 
-        const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(b.videoUrl) : null;
-        const imageUrls: string[] = Array.isArray(b.imageUrls) ? b.imageUrls.filter(Boolean) : [];
-        const imageLayout: "row" | "grid" = b.imageLayout === "grid" ? "grid" : "row";
+        const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(block.videoUrl) : null;
+        const imageUrls: string[] = Array.isArray(block.imageUrls)
+          ? block.imageUrls.filter(Boolean)
+          : [];
+        const imageLayout: "row" | "grid" = block.imageLayout === "grid" ? "grid" : "row";
 
-        if (!title && !body && !linkUrl && !embedUrl && imageUrls.length === 0) return null;
+        if (!titleText && !body && !linkUrl && !embedUrl && imageUrls.length === 0) return null;
 
-        const media =
-          embedUrl ? (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
-              <iframe
-                src={embedUrl}
-                title={title || "YouTube видео"}
-                className="h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-          ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
-            <div className={imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"}>
-              {imageUrls.map((url, imgIndex) => {
-                const modalId = `preview-card-modal-${index}-${imgIndex}`;
-                return (
-                  <div key={modalId} className="relative aspect-square w-full">
-                    <input type="checkbox" id={modalId} className="peer hidden" />
-                    <label htmlFor={modalId} className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40">
-                      <img src={url} alt={title || `Галерия ${imgIndex + 1}`} className="h-full w-full object-cover" />
-                    </label>
+        const media = embedUrl ? (
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
+            <iframe
+              src={embedUrl}
+              title={titleText || "YouTube видео"}
+              className="h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
+        ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
+          <div className={imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"}>
+            {imageUrls.map((url, imgIndex) => {
+              const modalId = `preview-card-modal-${index}-${imgIndex}`;
+              return (
+                <div key={modalId} className="relative aspect-square w-full">
+                  <input type="checkbox" id={modalId} className="peer hidden" />
+                  <label
+                    htmlFor={modalId}
+                    className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={titleText || `Галерия ${imgIndex + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </label>
 
-                    <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
-                      <label htmlFor={modalId} className="absolute inset-0 cursor-zoom-out" />
-                      <div className="relative z-50 max-w-4xl w-full">
-                        <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
-                          <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
-                            <img src={url} alt={title || `Галерия ${imgIndex + 1}`} className="h-full w-full object-contain bg-black" />
-                          </div>
+                  <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
+                    <label htmlFor={modalId} className="absolute inset-0 cursor-zoom-out" />
+                    <div className="relative z-50 max-w-4xl w-full">
+                      <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
+                        <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={titleText || `Галерия ${imgIndex + 1}`}
+                            className="h-full w-full object-contain bg-black"
+                          />
                         </div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          ) : null;
+                </div>
+              );
+            })}
+          </div>
+        ) : null;
 
         const textSection = (
           <>
-            {title && <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>}
+            {titleText && (
+              <h3 className="text-sm font-semibold text-white mb-1 break-words">
+                {titleText}
+              </h3>
+            )}
             {body && (
               <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
                 <div dangerouslySetInnerHTML={{ __html: body }} />
@@ -1046,9 +1274,12 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
           </>
         );
 
-        let inner;
+        let inner: React.ReactNode;
         if (layout === "mediaLeft" || layout === "mediaRight") {
-          const floatClass = layout === "mediaRight" ? "float-right ml-4 mb-2 w-24 sm:w-32" : "float-left mr-4 mb-2 w-24 sm:w-32";
+          const floatClass =
+            layout === "mediaRight"
+              ? "float-right ml-4 mb-2 w-24 sm:w-32"
+              : "float-left mr-4 mb-2 w-24 sm:w-32";
           inner = (
             <div className='after:content-[""] after:block after:clear-both'>
               {media && <div className={floatClass}>{media}</div>}
@@ -1057,7 +1288,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
           );
         } else {
           inner = (
-            <div className={`flex flex-col gap-3 ${layout === "mediaBottom" ? "flex-col-reverse" : ""}`}>
+            <div
+              className={`flex flex-col gap-3 ${
+                layout === "mediaBottom" ? "flex-col-reverse" : ""
+              }`}
+            >
               {media && <div>{media}</div>}
               <div className="space-y-1">{textSection}</div>
             </div>
@@ -1088,10 +1323,18 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       return (
         <div className="flex items-center justify-between text-[11px] text-white/50">
           <div className="flex gap-2">
-            <button type="button" onClick={() => moveBlock(block.id, "up")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+            <button
+              type="button"
+              onClick={() => moveBlock(block.id, "up")}
+              className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
+            >
               ↑
             </button>
-            <button type="button" onClick={() => moveBlock(block.id, "down")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+            <button
+              type="button"
+              onClick={() => moveBlock(block.id, "down")}
+              className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
+            >
               ↓
             </button>
           </div>
@@ -1103,13 +1346,25 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
     return (
       <div className="flex items-center justify-between text-[11px] text-white/50">
         <div className="flex gapl gap-2">
-          <button type="button" onClick={() => moveBlock(block.id, "up")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+          <button
+            type="button"
+            onClick={() => moveBlock(block.id, "up")}
+            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
+          >
             ↑
           </button>
-          <button type="button" onClick={() => moveBlock(block.id, "down")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+          <button
+            type="button"
+            onClick={() => moveBlock(block.id, "down")}
+            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
+          >
             ↓
           </button>
-          <button type="button" onClick={() => duplicateBlock(block.id)} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+          <button
+            type="button"
+            onClick={() => duplicateBlock(block.id)}
+            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
+          >
             Копие
           </button>
         </div>
@@ -1137,14 +1392,19 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
     };
 
     return (
-      <div key={block.id} className="space-y-2 rounded-lg border border-white/10 bg-black/40 p-3">
+      <div
+        key={block.id}
+        className="space-y-2 rounded-lg border border-white/10 bg-black/40 p-3"
+      >
         {renderEditorBlockControls(block)}
 
         {/* MEDIA BLOCK UI */}
         {block.type === "media" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-white/60">Линк към трейлър (YouTube линк или embed)</label>
+              <label className="text-xs text-white/60">
+                Линк към трейлър (YouTube линк или embed)
+              </label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm break-words"
                 value={trailerUrl}
@@ -1155,7 +1415,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-white/60">Изображения в галерия</span>
+                <span className="text-xs text-white/60">
+                  Изображения в галерия
+                </span>
                 <button
                   type="button"
                   className="rounded-full border border-white/30 px-2 py-0.5 text-[11px]"
@@ -1165,28 +1427,47 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 </button>
               </div>
 
-              {gallery.length === 0 && <p className="text-[11px] text-white/50">Няма изображения. Натисни „Добави изображение“.</p>}
+              {gallery.length === 0 && (
+                <p className="text-[11px] text-white/50">
+                  Няма изображения. Натисни „Добави изображение“.
+                </p>
+              )}
 
               <div className="space-y-2">
                 {gallery.map((g, idx) => (
-                  <div key={idx} className="grid gap-2 rounded-md border border-white/15 bg-black/40 p-2 text-xs md:grid-cols-[2fr,3fr,auto]">
+                  <div
+                    key={`${g.url}-${idx}`}
+                    className="grid gap-2 rounded-md border border-white/15 bg-black/40 p-2 text-xs md:grid-cols-[2fr,3fr,auto]"
+                  >
                     <NewsImageUpload
                       label="URL на изображение"
                       value={g.url}
-                      onChange={(url) => setGallery((list) => list.map((item, i) => (i === idx ? { ...item, url } : item)))}
+                      onChange={(url) =>
+                        setGallery((list) =>
+                          list.map((item, i) => (i === idx ? { ...item, url } : item)),
+                        )
+                      }
                     />
                     <div className="space-y-1">
-                      <label className="text-[11px] text-white/60">Надпис (по желание)</label>
+                      <label className="text-[11px] text-white/60">
+                        Надпис (по желание)
+                      </label>
                       <input
                         className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                         value={g.caption || ""}
-                        onChange={(e) => setGallery((list) => list.map((item, i) => (i === idx ? { ...item, caption: e.target.value } : item)))}
+                        onChange={(e) =>
+                          setGallery((list) =>
+                            list.map((item, i) =>
+                              i === idx ? { ...item, caption: e.target.value } : item,
+                            ),
+                          )
+                        }
                       />
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setGallery((list) => list.filter((_, i) => i !== idx))}
+                      onClick={() => setGallery((list) => list.filter((_v, i) => i !== idx))}
                       className="inline-flex w-fit self-start items-center justify-center rounded-full border border-red-500/60 px-3 py-1 text-[11px] text-red-200 hover:bg-red-500/10"
                     >
                       Премахни
@@ -1198,17 +1479,31 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
           </div>
         )}
 
-        {block.type === "paragraph" && <RichTextEditor value={block.text} onChange={(html) => updateBlock<ParagraphBlock>(block.id, { text: html })} placeholder="Текст на ревюто..." />}
+        {block.type === "paragraph" && (
+          <RichTextEditor
+            value={block.text}
+            onChange={(html) => updateBlock<ParagraphBlock>(block.id, { text: html })}
+            placeholder="Текст на ревюто..."
+          />
+        )}
 
         {block.type === "heading" && (
           <div className="space-y-2">
             <div className="flex gap-2 text-[11px]">
               <label className="flex items-center gap-1">
-                <input type="radio" checked={block.level === 2} onChange={() => updateBlock<HeadingBlock>(block.id, { level: 2 })} />
+                <input
+                  type="radio"
+                  checked={block.level === 2}
+                  onChange={() => updateBlock<HeadingBlock>(block.id, { level: 2 })}
+                />
                 H2
               </label>
               <label className="flex items-center gap-1">
-                <input type="radio" checked={block.level === 3} onChange={() => updateBlock<HeadingBlock>(block.id, { level: 3 })} />
+                <input
+                  type="radio"
+                  checked={block.level === 3}
+                  onChange={() => updateBlock<HeadingBlock>(block.id, { level: 3 })}
+                />
                 H3
               </label>
             </div>
@@ -1223,7 +1518,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
         {block.type === "image" && (
           <div className="space-y-2">
-            <NewsImageUpload label="Изображение в блока" value={block.url} onChange={(url) => updateBlock<ImageBlock>(block.id, { url })} />
+            <NewsImageUpload
+              label="Изображение в блока"
+              value={block.url}
+              onChange={(url) => updateBlock<ImageBlock>(block.id, { url })}
+            />
             <input
               className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
               value={block.caption}
@@ -1233,21 +1532,35 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
           </div>
         )}
 
-        {block.type === "quote" && <RichTextEditor value={block.text} onChange={(html) => updateBlock<QuoteBlock>(block.id, { text: html })} placeholder="Цитат…" />}
+        {block.type === "quote" && (
+          <RichTextEditor
+            value={block.text}
+            onChange={(html) => updateBlock<QuoteBlock>(block.id, { text: html })}
+            placeholder="Цитат…"
+          />
+        )}
 
         {block.type === "embed" && (
           <div className="space-y-2">
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">URL или iframe / X (Twitter) код</label>
+              <label className="text-[11px] text-white/60">
+                URL или iframe / X (Twitter) код
+              </label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.url}
-                onChange={(e) => updateBlock<EmbedBlock>(block.id, { url: normalizeEmbedInput(e.target.value) })}
+                onChange={(e) =>
+                  updateBlock<EmbedBlock>(block.id, {
+                    url: normalizeEmbedInput(e.target.value),
+                  })
+                }
                 placeholder="Постави Facebook/YouTube/X URL или embed код"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">Надпис (по желание)</label>
+              <label className="text-[11px] text-white/60">
+                Надпис (по желание)
+              </label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.title || ""}
@@ -1261,7 +1574,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
         {block.type === "gallery" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">Заглавие на галерия (по желание)</label>
+              <label className="text-[11px] text-white/60">
+                Заглавие на галерия (по желание)
+              </label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.title ?? ""}
@@ -1271,18 +1586,29 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
             </div>
 
             <label className="flex items-center gap-2 text-[11px] text-white/70">
-              <input type="checkbox" checked={block.withBackground ?? false} onChange={(e) => updateBlock<GalleryBlock>(block.id, { withBackground: e.target.checked })} />
+              <input
+                type="checkbox"
+                checked={block.withBackground ?? false}
+                onChange={(e) =>
+                  updateBlock<GalleryBlock>(block.id, { withBackground: e.target.checked })
+                }
+              />
               <span>Покажи тъмен фон зад галерията</span>
             </label>
 
             <div className="space-y-2">
               {(block.images ?? []).map((img, idx) => (
-                <div key={img.id} className="grid gap-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
+                <div
+                  key={img.id}
+                  className="grid gap-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start"
+                >
                   <GalleryImageUpload
                     label={`Изображение ${idx + 1}`}
                     value={img.url}
                     onChange={(url) => {
-                      const next = (block.images ?? []).map((g, i) => (i === idx ? { ...g, url } : g));
+                      const next = (block.images ?? []).map((g, i) =>
+                        i === idx ? { ...g, url } : g,
+                      );
                       updateBlock<GalleryBlock>(block.id, { images: next });
                     }}
                   />
@@ -1291,7 +1617,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                       className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                       value={img.caption ?? ""}
                       onChange={(e) => {
-                        const next = (block.images ?? []).map((g, i) => (i === idx ? { ...g, caption: e.target.value } : g));
+                        const next = (block.images ?? []).map((g, i) =>
+                          i === idx ? { ...g, caption: e.target.value } : g,
+                        );
                         updateBlock<GalleryBlock>(block.id, { images: next });
                       }}
                       placeholder="Надпис (по желание)…"
@@ -1313,7 +1641,10 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
               <button
                 type="button"
                 onClick={() => {
-                  const next = [...(block.images ?? []), { id: nanoid(), url: "", caption: "" }];
+                  const next = [
+                    ...(block.images ?? []),
+                    { id: nanoid(), url: "", caption: "" },
+                  ];
                   updateBlock<GalleryBlock>(block.id, { images: next });
                 }}
                 className="rounded-full border border-white/30 px-3 py-1 text-[11px] hover:bg-white/10"
@@ -1332,7 +1663,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.variant}
-                  onChange={(e) => updateBlock<CardBlock>(block.id, { variant: e.target.value as CardVariant })}
+                  onChange={(e) =>
+                    updateBlock<CardBlock>(block.id, { variant: e.target.value as CardVariant })
+                  }
                 >
                   <option value="default">Нормална</option>
                   <option value="compact">Компактна</option>
@@ -1345,7 +1678,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.mediaType}
-                  onChange={(e) => updateBlock<CardBlock>(block.id, { mediaType: e.target.value as any })}
+                  onChange={(e) =>
+                    updateBlock<CardBlock>(block.id, { mediaType: e.target.value as CardMediaType })
+                  }
                 >
                   <option value="none">Без</option>
                   <option value="video">YouTube видео</option>
@@ -1355,7 +1690,13 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
               <div className="space-y-1">
                 <label className="text-white/60">Подредба</label>
-                <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.layout} onChange={(e) => updateBlock<CardBlock>(block.id, { layout: e.target.value as any })}>
+                <select
+                  className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+                  value={block.layout}
+                  onChange={(e) =>
+                    updateBlock<CardBlock>(block.id, { layout: e.target.value as CardLayout })
+                  }
+                >
                   <option value="mediaTop">Медия отгоре</option>
                   <option value="mediaBottom">Медия отдолу</option>
                   <option value="mediaLeft">Медия вляво</option>
@@ -1368,7 +1709,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.cardWidth || "narrow"}
-                  onChange={(e) => updateBlock<CardBlock>(block.id, { cardWidth: e.target.value as CardWidth })}
+                  onChange={(e) =>
+                    updateBlock<CardBlock>(block.id, { cardWidth: e.target.value as CardWidth })
+                  }
                 >
                   <option value="narrow">Тясна</option>
                   <option value="full">На цялата ширина</option>
@@ -1391,8 +1734,18 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
             {block.mediaType === "imageGrid" && (
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-white/60">Подредба на галерията</label>
-                  <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.imageLayout || "row"} onChange={(e) => updateBlock<CardBlock>(block.id, { imageLayout: e.target.value as "row" | "grid" })}>
+                  <label className="text-[11px] text-white/60">
+                    Подредба на галерията
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+                    value={block.imageLayout || "row"}
+                    onChange={(e) =>
+                      updateBlock<CardBlock>(block.id, {
+                        imageLayout: e.target.value as "row" | "grid",
+                      })
+                    }
+                  >
                     <option value="row">Ред</option>
                     <option value="grid">Решетка</option>
                   </select>
@@ -1400,27 +1753,64 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[0, 1, 2].map((idx) => (
-                    <NewsImageUpload key={idx} label={`Изображение ${idx + 1}`} value={(block.imageUrls ?? [])[idx] || ""} onChange={(url) => updateBlock<CardBlock>(block.id, { imageUrls: updateImageUrls(block, idx, url) })} />
+                    <NewsImageUpload
+                      key={idx}
+                      label={`Изображение ${idx + 1}`}
+                      value={(block.imageUrls ?? [])[idx] || ""}
+                      onChange={(url) =>
+                        updateBlock<CardBlock>(block.id, {
+                          imageUrls: updateImageUrls(block, idx, url),
+                        })
+                      }
+                    />
                   ))}
                 </div>
               </div>
             )}
 
-            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.title} onChange={(e) => updateBlock<CardBlock>(block.id, { title: e.target.value })} placeholder="Заглавие…" />
+            <input
+              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+              value={block.title}
+              onChange={(e) => updateBlock<CardBlock>(block.id, { title: e.target.value })}
+              placeholder="Заглавие…"
+            />
 
-            <RichTextEditor value={block.body} onChange={(html) => updateBlock<CardBlock>(block.id, { body: html })} placeholder="Кратък текст…" />
+            <RichTextEditor
+              value={block.body}
+              onChange={(html) => updateBlock<CardBlock>(block.id, { body: html })}
+              placeholder="Кратък текст…"
+            />
 
-            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.linkUrl} onChange={(e) => updateBlock<CardBlock>(block.id, { linkUrl: e.target.value })} placeholder="Линк (https://...)…" />
-            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.linkLabel} onChange={(e) => updateBlock<CardBlock>(block.id, { linkLabel: e.target.value })} placeholder='Текст на линка (напр. "Прочети още")…' />
+            <input
+              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+              value={block.linkUrl}
+              onChange={(e) => updateBlock<CardBlock>(block.id, { linkUrl: e.target.value })}
+              placeholder="Линк (https://...)…"
+            />
+            <input
+              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+              value={block.linkLabel}
+              onChange={(e) => updateBlock<CardBlock>(block.id, { linkLabel: e.target.value })}
+              placeholder='Текст на линка (напр. "Прочети още")…'
+            />
           </div>
         )}
 
-        {block.type === "divider" && <p className="text-[11px] text-white/60">Хоризонтален разделител</p>}
+        {block.type === "divider" && (
+          <p className="text-[11px] text-white/60">Хоризонтален разделител</p>
+        )}
 
         <div className="pt-2 border-t border-white/10 mt-2 flex flex-wrap gap-2 text-[11px]">
           <span className="text-white/50">Добави блок:</span>
-          {(["paragraph", "heading", "image", "gallery", "quote", "embed", "card", "divider"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => addBlockAfter(block.id, t)} className="rounded-full border border-white/30 px-2 py-0.5 hover:bg-white/10">
+          {(
+            ["paragraph", "heading", "image", "gallery", "quote", "embed", "card", "divider"] as const
+          ).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => addBlockAfter(block.id, t)}
+              className="rounded-full border border-white/30 px-2 py-0.5 hover:bg-white/10"
+            >
               {addBlockLabels[t]}
             </button>
           ))}
@@ -1459,9 +1849,17 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
           </button>
         </div>
 
-        {success && <div className="rounded-md border border-lime-400/40 bg-lime-400/10 px-3 py-2 text-sm text-lime-200">{success}</div>}
+        {success && (
+          <div className="rounded-md border border-lime-400/40 bg-lime-400/10 px-3 py-2 text-sm text-lime-200">
+            {success}
+          </div>
+        )}
 
-        {error && <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+        {error && (
+          <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            {error}
+          </div>
+        )}
 
         <form id="rating-editor-form" onSubmit={handleSubmit} className="space-y-6">
           {/* Basic info + Game details together */}
@@ -1470,11 +1868,18 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
             <div className="space-y-1">
               <label className="text-xs text-white/60">Заглавие на играта</label>
-              <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <input
+                className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
             </div>
 
             <details className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <summary className="cursor-pointer text-xs font-semibold text-white/70">SEO & URL (по желание)</summary>
+              <summary className="cursor-pointer text-xs font-semibold text-white/70">
+                SEO & URL (по желание)
+              </summary>
               <div className="mt-3 space-y-2">
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">Slug (за URL)</label>
@@ -1484,7 +1889,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                     onChange={(e) => setSlug(e.target.value)}
                     placeholder="пример: witcher-3-review"
                   />
-                  <p className="text-[11px] text-white/40">Ако е празно, ще се използва числовото id.</p>
+                  <p className="text-[11px] text-white/40">
+                    Ако е празно, ще се използва числовото id.
+                  </p>
                 </div>
               </div>
             </details>
@@ -1492,24 +1899,39 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
             <div className="grid gap-3 md:grid-cols-[1fr,180px]">
               <div className="space-y-1">
                 <label className="text-xs text-white/60">Оценка</label>
-                <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={score} onChange={(e) => setScore(e.target.value)} placeholder="8.5" />
+                <input
+                  className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                  value={score}
+                  onChange={(e) => setScore(e.target.value)}
+                  placeholder="8.5"
+                />
               </div>
 
               <GalleryImageUpload label="Корица" value={imageUrl} onChange={setImageUrl} />
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Детайли за играта</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">
+                Детайли за играта
+              </h3>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">Разработчик</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={developer} onChange={(e) => setDeveloper(e.target.value)} />
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={developer}
+                    onChange={(e) => setDeveloper(e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">Издател</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={publisher} onChange={(e) => setPublisher(e.target.value)} />
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={publisher}
+                    onChange={(e) => setPublisher(e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-1">
@@ -1520,7 +1942,10 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                     value={releaseDateISO}
                     onChange={(e) => setReleaseDateISO(e.target.value)}
                   />
-                  <p className="text-[11px] text-white/40">Показва се като {releaseDateISO ? formatBgDateFromISO(releaseDateISO) : "дд.мм.гггг"}.</p>
+                  <p className="text-[11px] text-white/40">
+                    Показва се като{" "}
+                    {releaseDateISO ? formatBgDateFromISO(releaseDateISO) : "дд.мм.гггг"}.
+                  </p>
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
@@ -1529,12 +1954,16 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                     {PLATFORM_OPTIONS.map((p) => {
                       const checked = platformsSelected.includes(p);
                       return (
-                        <label key={p} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/75 hover:bg-white/5">
+                        <label
+                          key={p}
+                          className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/75 hover:bg-white/5"
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                              if (e.target.checked) setPlatformsSelected((prev) => Array.from(new Set([...prev, p])));
+                              if (e.target.checked)
+                                setPlatformsSelected((prev) => Array.from(new Set([...prev, p])));
                               else setPlatformsSelected((prev) => prev.filter((x) => x !== p));
                             }}
                           />
@@ -1560,35 +1989,61 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Време за изиграване</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">
+                Време за изиграване
+              </h3>
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Основна история (часове)</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursMainInput} onChange={(e) => setHoursMainInput(e.target.value)} />
+                  <label className="text-xs text-white/60">
+                    Основна история (часове)
+                  </label>
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={hoursMainInput}
+                    onChange={(e) => setHoursMainInput(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">История + странични</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursMainPlusInput} onChange={(e) => setHoursMainPlusInput(e.target.value)} />
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={hoursMainPlusInput}
+                    onChange={(e) => setHoursMainPlusInput(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">100%</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursCompletionistInput} onChange={(e) => setHoursCompletionistInput(e.target.value)} />
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={hoursCompletionistInput}
+                    onChange={(e) => setHoursCompletionistInput(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-white/60">Всички стилове</label>
-                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursAllStylesInput} onChange={(e) => setHoursAllStylesInput(e.target.value)} />
+                  <input
+                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                    value={hoursAllStylesInput}
+                    onChange={(e) => setHoursAllStylesInput(e.target.value)}
+                  />
                 </div>
               </div>
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Автор</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">
+                Автор
+              </h3>
 
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
                 <div className="space-y-3">
                   <div className="space-y-1">
                     <label className="text-[11px] text-white/60">Избери автор</label>
-                    <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={selectedAuthorId} onChange={(e) => handleSelectAuthor(e.target.value)}>
+                    <select
+                      className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
+                      value={selectedAuthorId}
+                      onChange={(e) => handleSelectAuthor(e.target.value)}
+                    >
                       <option value="">Персонализиран автор…</option>
                       {authors.map((a) => (
                         <option key={a.id} value={a.id}>
@@ -1616,9 +2071,17 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 <div className="flex flex-col items-center gap-3">
                   <div className="relative h-28 w-28 rounded-full overflow-hidden border border-white/60 bg-black/50 flex-shrink-0">
                     {reviewerAvatarUrl ? (
-                      <Image src={reviewerAvatarUrl} alt={reviewerName || "Автор"} fill sizes="112px" className="object-cover" />
+                      <Image
+                        src={reviewerAvatarUrl}
+                        alt={reviewerName || "Автор"}
+                        fill
+                        sizes="112px"
+                        className="object-cover"
+                      />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-[10px] text-white/60">Няма снимка</div>
+                      <div className="flex h-full w-full items-center justify-center text-[10px] text-white/60">
+                        Няма снимка
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1632,12 +2095,19 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
             <div className="space-y-1">
               <label className="text-xs text-white/60">Етикет до оценката</label>
-              <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={verdictLabel} onChange={(e) => setVerdictLabel(e.target.value)} placeholder="Ревю" />
+              <input
+                className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
+                value={verdictLabel}
+                onChange={(e) => setVerdictLabel(e.target.value)}
+                placeholder="Ревю"
+              />
             </div>
 
             <div className="pt-2 border-t border-white/10 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-white/70">Блокове</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-white/70">
+                  Блокове
+                </h3>
 
                 <button
                   type="button"
@@ -1662,8 +2132,13 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
       {/* RIGHT: preview (scaled down) */}
       <aside className="lg:sticky lg:top-3 h-fit">
-        <div ref={previewWrapRef} className="rounded-2xl border border-white/10 bg-black/40 p-3 overflow-hidden">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">Преглед на живо</p>
+        <div
+          ref={previewWrapRef}
+          className="rounded-2xl border border-white/10 bg-black/40 p-3 overflow-hidden"
+        >
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">
+            Преглед на живо
+          </p>
 
           <div className="rounded-xl border border-white/10 bg-surface p-3">
             <div
@@ -1676,100 +2151,135 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
               <div className="space-y-6">
                 {/* HERO */}
                 <div className="rounded-2xl border border-white/10 bg-black/40 p-4 sm:p-5 space-y-4">
-  <div className="flex flex-col gap-4 md:flex-row md:items-start">
-    <div className="relative w-full md:w-[155px] aspect-[2/3] max-h-[230px] rounded-xl overflow-hidden border border-white/15 bg-transparent">
-      {previewCover ? (
-        <Image
-          src={previewCover}
-          alt={title || "Корица"}
-          fill
-          sizes="(min-width: 1024px) 155px, 60vw"
-          className="object-cover"
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
-          No image
-        </div>
-      )}
-    </div>
-
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start">
+                    <div className="relative w-full md:w-[155px] aspect-[2/3] max-h-[230px] rounded-xl overflow-hidden border border-white/15 bg-transparent">
+                      {previewCover ? (
+                        <Image
+                          src={previewCover}
+                          alt={title || "Корица"}
+                          fill
+                          sizes="(min-width: 1024px) 155px, 60vw"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
+                          No image
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex-1 flex flex-col justify-start gap-4 min-w-0 pt-1">
                       <div className="space-y-2">
-                        <p className="text-[11px] uppercase tracking-wide text-white/60">{todayBg}</p>
+                        <p className="text-[11px] uppercase tracking-wide text-white/60">
+                          {todayBg}
+                        </p>
 
-                        <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight break-words">{title || "Заглавие на играта…"}</h1>
+                        <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight break-words">
+                          {title || "Заглавие на играта…"}
+                        </h1>
 
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-white/70">
                           {developer && (
                             <span className="break-all">
-                              <span className="text-white/50">Разработчик:</span> {developer}
+                              <span className="text-white/50">Разработчик:</span>{" "}
+                              {developer}
                             </span>
                           )}
                           {releaseDateISO && (
                             <span className="break-all">
-                              <span className="text-white/50">Премиера:</span> {formatBgDateFromISO(releaseDateISO)}
+                              <span className="text-white/50">Премиера:</span>{" "}
+                              {formatBgDateFromISO(releaseDateISO)}
                             </span>
                           )}
                           {publisher && (
                             <span className="break-all">
-                              <span className="text-white/50">Издател:</span> {publisher}
+                              <span className="text-white/50">Издател:</span>{" "}
+                              {publisher}
                             </span>
                           )}
                         </div>
 
-                        {(previewPlatforms.length > 0 || previewGenres.length > 0) && (
+                        {previewPlatforms.length > 0 && (
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            {previewPlatforms.length > 0 && <PlatformIcons platforms={previewPlatforms} />}
+                            <PlatformIcons platforms={previewPlatforms} />
                           </div>
                         )}
                       </div>
 
-                      {/* ✅ Score row + genres on the right as clean text (no pills) */}
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500 text-xl font-bold shadow-[0_0_30px_rgba(248,113,113,0.7)]">
-                          {previewScoreNumber != null ? previewScoreNumber.toFixed(1) : "--"}
-                        </div>
-
-                        <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
-                          <div className="text-[12px] text-white/70">
-                            <p className="text-[10px] uppercase tracking-wide">GameLink оценка</p>
-                            <p className="break-words">{verdictLabel || "Ревю"}</p>
+                      {/* ✅ Score row (REMOVED verdict paragraph), genres moved BELOW */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500 text-xl font-bold shadow-[0_0_30px_rgba(248,113,113,0.7)]">
+                            {previewScoreNumber != null
+                              ? previewScoreNumber.toFixed(1)
+                              : "--"}
                           </div>
 
-                          {previewGenres.length > 0 && (
-                            <div className="text-right text-[11px] text-white/55 leading-snug max-w-[55%]">
-                              <p className="uppercase tracking-wide text-[10px] text-white/40">Жанрове</p>
-                              <p className="truncate">{previewGenres.join(" • ")}</p>
-                            </div>
-                          )}
+                          <div className="text-[12px] text-white/70">
+                            <p className="text-[10px] uppercase tracking-wide">
+                              GameLink оценка
+                            </p>
+                            {/* ✅ removed: <p className="break-words">{verdictLabel || "Ревю"}</p> */}
+                          </div>
                         </div>
+
+                        {previewGenres.length > 0 && (
+                          <div className="text-[11px] text-white/55 leading-snug">
+                            <p className="uppercase tracking-wide text-[10px] text-white/40">
+                              Жанрове
+                            </p>
+                            {/* ✅ below, wraps nicely, no giant mt hacks needed */}
+                            <p className="break-words">
+                              {previewGenres.join(" • ")}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-white/10">
-                    <h2 className="text-sm font-semibold mb-2">Време за изиграване</h2>
+                    <h2 className="text-sm font-semibold mb-2">
+                      Време за изиграване
+                    </h2>
 
                     <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-center text-[11px]">
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">Основна история</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursMainInput ? `${hoursMainInput} ч.` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">
+                          Основна история
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">
+                          {hoursMainInput ? `${hoursMainInput} ч.` : "--"}
+                        </p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">История + странични</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursMainPlusInput ? `${hoursMainPlusInput} ч.` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">
+                          История + странични
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">
+                          {hoursMainPlusInput ? `${hoursMainPlusInput} ч.` : "--"}
+                        </p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">100%</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursCompletionistInput ? `${hoursCompletionistInput} ч.` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">
+                          100%
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">
+                          {hoursCompletionistInput
+                            ? `${hoursCompletionistInput} ч.`
+                            : "--"}
+                        </p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">Всички стилове</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursAllStylesInput ? `${hoursAllStylesInput} ч.` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">
+                          Всички стилове
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">
+                          {hoursAllStylesInput ? `${hoursAllStylesInput} ч.` : "--"}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1778,7 +2288,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                 {/* Blocks + Media marker respected */}
                 {(blocksBeforeMedia.length > 0 || blocksAfterMedia.length > 0) && (
                   <div className="space-y-3">
-                    {blocksBeforeMedia.length > 0 && <section className="space-y-3">{blocksBeforeMedia.map((b, idx) => renderBlockLikePage(b, idx))}</section>}
+                    {blocksBeforeMedia.length > 0 && (
+                      <section className="space-y-3">
+                        {blocksBeforeMedia.map((b, idx) => renderBlockLikePage(b, idx))}
+                      </section>
+                    )}
 
                     {hasMarker && (embedTrailer || previewGallery.length > 0) && (
                       <div className="space-y-3">
@@ -1793,14 +2307,18 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                             />
                           </div>
                         )}
-                        {previewGallery.length > 0 && <StoryGallery images={previewGallery} withBackground={false} />}
+                        {previewGallery.length > 0 && (
+                          <StoryGallery images={previewGallery} withBackground={false} />
+                        )}
                       </div>
                     )}
 
                     {blocksAfterMedia.length > 0 && (
                       <div className="space-y-3">
                         <h2 className="text-sm font-semibold">{verdictLabel || "Ревю"}</h2>
-                        <section className="space-y-3">{blocksAfterMedia.map((b, idx) => renderBlockLikePage(b, idx))}</section>
+                        <section className="space-y-3">
+                          {blocksAfterMedia.map((b, idx) => renderBlockLikePage(b, idx))}
+                        </section>
                       </div>
                     )}
 
@@ -1817,7 +2335,9 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                             />
                           </div>
                         )}
-                        {previewGallery.length > 0 && <StoryGallery images={previewGallery} withBackground={false} />}
+                        {previewGallery.length > 0 && (
+                          <StoryGallery images={previewGallery} withBackground={false} />
+                        )}
                       </div>
                     )}
                   </div>
@@ -1828,9 +2348,19 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
                   <div className="rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
                     <div className="flex items-center gap-3">
                       <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/40 bg-black flex-shrink-0">
-                        <Image src={reviewerAvatarUrl || "/default.jpg"} alt={reviewerName || "Автор"} fill sizes="40px" className="object-cover" />
+                        <Image
+                          src={reviewerAvatarUrl || "/default.jpg"}
+                          alt={reviewerName || "Автор"}
+                          fill
+                          sizes="40px"
+                          className="object-cover"
+                        />
                       </div>
-                      <div className="text-sm min-w-0">{reviewerName && <p className="font-semibold break-words">{reviewerName}</p>}</div>
+                      <div className="text-sm min-w-0">
+                        {reviewerName && (
+                          <p className="font-semibold break-words">{reviewerName}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

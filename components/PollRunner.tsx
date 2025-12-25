@@ -15,8 +15,18 @@ type ResultsRow = {
   question_id: string;
   option_id: string;
   votes: number;
-  [key: string]: any;
+  [key: string]: unknown;
 };
+
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return "Unknown error";
+}
 
 export default function PollRunner({ poll }: PollRunnerProps) {
   const router = useRouter();
@@ -76,7 +86,7 @@ export default function PollRunner({ poll }: PollRunnerProps) {
     return questions.every((q) => Boolean(selections[q.id]));
   }, [questions, selections]);
 
-  function safeNumber(x: any) {
+  function safeNumber(x: unknown) {
     const n = Number(x);
     return Number.isFinite(n) ? n : 0;
   }
@@ -184,18 +194,19 @@ export default function PollRunner({ poll }: PollRunnerProps) {
 
       try {
         await submitPollVotes({ pollId: poll.id, answers });
-      } catch (err: any) {
-        const msg = String(err?.message || err);
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err);
 
         if (msg === "NOT_LOGGED_IN") {
           goLogin();
           return;
         }
 
+        const lower = msg.toLowerCase();
         if (
-          msg.toLowerCase().includes("duplicate key") ||
-          msg.toLowerCase().includes("already") ||
-          msg.toLowerCase().includes("unique")
+          lower.includes("duplicate key") ||
+          lower.includes("already") ||
+          lower.includes("unique")
         ) {
           await loadMyStateAndMaybeResults();
           return;
@@ -205,7 +216,7 @@ export default function PollRunner({ poll }: PollRunnerProps) {
       }
 
       await loadMyStateAndMaybeResults();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
       alert("Something went wrong while submitting your vote.");
     } finally {
@@ -582,7 +593,8 @@ export default function PollRunner({ poll }: PollRunnerProps) {
             const v = getVotes(optId);
             return total > 0 ? Math.round((v / total) * 100) : 0;
           };
-          const getWinner = (optId: string) => (winnersByQuestion[q.id] ?? new Set()).has(optId);
+          const getWinner = (optId: string) =>
+            (winnersByQuestion[q.id] ?? new Set()).has(optId);
 
           return (
             <section key={q.id} className="space-y-4">
@@ -658,7 +670,8 @@ export default function PollRunner({ poll }: PollRunnerProps) {
   // ---------- states ----------
 
   if (loading) return <div className="text-sm text-white/70">Loading poll…</div>;
-  if (!questions.length) return <div className="text-sm text-white/70">This poll has no questions yet.</div>;
+  if (!questions.length)
+    return <div className="text-sm text-white/70">This poll has no questions yet.</div>;
 
   if (!active) return <ClosedResultsView />;
   if (hasVoted) return <ActiveVotedView />;

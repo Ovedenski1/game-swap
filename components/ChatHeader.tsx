@@ -1,6 +1,6 @@
 "use client";
 
-import type { UserProfile } from "@/app/profile/page";
+import type { UserProfile } from "@/components/ProfilePage";
 import { calculateAge } from "@/lib/helpers/calculate-age";
 import { useRouter } from "next/navigation";
 import type { Game } from "@/types/game";

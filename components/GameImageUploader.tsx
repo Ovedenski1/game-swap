@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { useState } from "react";
 import { uploadGameImage } from "@/lib/actions/games";
 
@@ -8,6 +9,10 @@ interface GameImageUploaderProps {
   onChange: (images: string[]) => void;
   maxImages?: number;
 }
+
+type UploadGameImageResult =
+  | { success: true; url: string }
+  | { success: false; error: string };
 
 export default function GameImageUploader({
   images,
@@ -21,20 +26,17 @@ export default function GameImageUploader({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // reset input at the end of the function (even on errors)
     const resetInput = () => {
       // allow selecting the same file again
       e.target.value = "";
     };
 
-    // limit number of images
     if (images.length >= maxImages) {
       setError(`You can upload up to ${maxImages} images per game.`);
       resetInput();
       return;
     }
 
-    // ✅ TYPE CHECK – only JPG / PNG
     const allowedTypes = ["image/jpeg", "image/png"];
     if (!allowedTypes.includes(file.type)) {
       setError("Only JPG and PNG images are allowed.");
@@ -42,7 +44,6 @@ export default function GameImageUploader({
       return;
     }
 
-    // ✅ SIZE CHECK – max ~5MB
     const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
       setError("Image is too large. Maximum size is 5MB.");
@@ -54,15 +55,17 @@ export default function GameImageUploader({
     setUploading(true);
 
     try {
-      const res = await uploadGameImage(file);
-      if (!res.success || !res.url) {
+      const res = (await uploadGameImage(file)) as UploadGameImageResult;
+
+      if (!res.success) {
         setError(res.error || "Failed to upload image.");
-      } else {
-        onChange([...images, res.url]);
+        return;
       }
-    } catch (err) {
+
+      onChange([...images, res.url]);
+    } catch (err: unknown) {
       console.error(err);
-      setError("Failed to upload image.");
+      setError(err instanceof Error ? err.message : "Failed to upload image.");
     } finally {
       setUploading(false);
       resetInput();
@@ -76,7 +79,6 @@ export default function GameImageUploader({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 flex-wrap">
-        {/* existing previews */}
         {images.map((url) => (
           <div
             key={url}
@@ -93,7 +95,6 @@ export default function GameImageUploader({
           </div>
         ))}
 
-        {/* upload button */}
         {images.length < maxImages && (
           <label className="w-20 h-24 flex items-center justify-center rounded-lg border border-dashed border-white/25 bg-black/20 text-xs cursor-pointer hover:bg-black/30">
             {uploading ? "Uploading…" : "+ Add"}

@@ -4,6 +4,20 @@
 import { createClient } from "../supabase/server";
 import type { GamePlatform } from "@/types/game";
 
+/* =========================================================================
+ * Helpers (no `any`)
+ * =======================================================================*/
+
+type Row = Record<string, unknown>;
+
+function asRow(v: unknown): Row {
+  return typeof v === "object" && v !== null ? (v as Row) : {};
+}
+
+/* =========================================================================
+ * Update preferred platforms
+ * =======================================================================*/
+
 export async function updatePreferredPlatforms(platforms: GamePlatform[]) {
   const supabase = await createClient();
 
@@ -27,9 +41,10 @@ export async function updatePreferredPlatforms(platforms: GamePlatform[]) {
     throw new Error("Failed to load preferences");
   }
 
-  const currentPrefs = (userRow?.preferences as any) || {};
+  // preferences can be null / unknown → normalize safely
+  const currentPrefs = asRow((userRow as Row | null | undefined)?.preferences);
 
-  const newPrefs = {
+  const newPrefs: Row = {
     ...currentPrefs,
     preferred_platforms: platforms,
   };

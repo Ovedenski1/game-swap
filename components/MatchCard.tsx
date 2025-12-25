@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 
 import MatchButtons from "./MatchButtons";
-import { UserProfile } from "@/app/profile/page";
+import { UserProfile } from "@/components/ProfilePage";
 import type { Game } from "@/types/game";
 import { MapPin } from "lucide-react";
 

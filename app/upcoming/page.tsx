@@ -25,6 +25,37 @@ type UpcomingGameRow = {
   sort_order: number;
 };
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(v: unknown): v is UnknownRecord {
+  return typeof v === "object" && v !== null;
+}
+
+function asString(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function asNullableString(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+function asNumber(v: unknown, fallback = 0): number {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asNullableNumber(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function asStringArrayOrNull(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  return out.length ? out : [];
+}
+
 const MONTHS_BG = [
   "",
   "ЯНУАРИ",
@@ -61,10 +92,9 @@ function isExternalUrl(href: string) {
 }
 
 function PlatformIconsInline({ platforms }: { platforms: string[] | null }) {
-  const keys: PlatformKey[] =
-    (platforms ?? [])
-      .map((p) => normalizePlatformKey(p))
-      .filter(Boolean) as PlatformKey[];
+  const keys: PlatformKey[] = (platforms ?? [])
+    .map((p) => normalizePlatformKey(p))
+    .filter(Boolean) as PlatformKey[];
 
   if (!keys.length) return null;
 
@@ -99,9 +129,7 @@ export default async function UpcomingPage(props: { searchParams: SearchParams }
 
   const { data, error } = await supabase
     .from("upcoming_games")
-    .select(
-      "id, year, month, day, title, studio, platforms, link_url, details_html, sort_order",
-    )
+    .select("id, year, month, day, title, studio, platforms, link_url, details_html, sort_order")
     .eq("year", safeYear)
     .order("month", { ascending: true })
     .order("sort_order", { ascending: true })
@@ -110,18 +138,23 @@ export default async function UpcomingPage(props: { searchParams: SearchParams }
 
   if (error) console.error("upcoming public page query error:", error);
 
-  const items: UpcomingGameRow[] = (data ?? []).map((r: any) => ({
-    id: String(r.id),
-    year: Number(r.year),
-    month: Number(r.month),
-    day: r.day === null || r.day === undefined ? null : Number(r.day),
-    title: String(r.title ?? ""),
-    studio: (r.studio as string | null) ?? null,
-    platforms: (r.platforms as string[] | null) ?? null,
-    link_url: (r.link_url as string | null) ?? null,
-    details_html: (r.details_html as string | null) ?? null,
-    sort_order: r.sort_order == null ? 0 : Number(r.sort_order),
-  }));
+  const rows: unknown[] = Array.isArray(data) ? (data as unknown[]) : [];
+
+  const items: UpcomingGameRow[] = rows
+    .filter(isRecord)
+    .map((r) => ({
+      id: asString(r.id),
+      year: asNumber(r.year),
+      month: asNumber(r.month),
+      day: asNullableNumber(r.day),
+      title: asString(r.title),
+      studio: asNullableString(r.studio),
+      platforms: asStringArrayOrNull(r.platforms),
+      link_url: asNullableString(r.link_url),
+      details_html: asNullableString(r.details_html),
+      sort_order: r.sort_order == null ? 0 : asNumber(r.sort_order),
+    }))
+    .filter((g) => Boolean(g.id) && Boolean(g.title));
 
   // group by month
   const byMonth = new Map<number, UpcomingGameRow[]>();
@@ -141,12 +174,8 @@ export default async function UpcomingPage(props: { searchParams: SearchParams }
       {/* Header (clean, no card) */}
       <header className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">
-            Предстоящи игри
-          </h1>
-          <p className="mt-2 text-sm text-white/60">
-            Всички месеци + TBA (по години).
-          </p>
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">Предстоящи игри</h1>
+          <p className="mt-2 text-sm text-white/60">Всички месеци + TBA (по години).</p>
 
           <form method="get" className="mt-6 flex flex-wrap items-center gap-3">
             <label className="text-sm text-white/70">Година:</label>
@@ -237,23 +266,17 @@ export default async function UpcomingPage(props: { searchParams: SearchParams }
                           className="rounded-lg px-2 py-2 -mx-2 hover:bg-white/[0.03] transition"
                         >
                           <div className="text-lg sm:text-xl text-white/80">
-                            <span className="font-semibold text-white">
-                              {formatDatePrefix(g)}
-                            </span>
+                            <span className="font-semibold text-white">{formatDatePrefix(g)}</span>
                             <span className="mx-2 text-white/30">—</span>
 
                             <TitleWrap>
-                              <span className="font-medium text-white">
-                                {g.title}
-                              </span>
+                              <span className="font-medium text-white">{g.title}</span>
                               <PlatformIconsInline platforms={g.platforms} />
                             </TitleWrap>
                           </div>
 
                           {g.studio ? (
-                            <div className="mt-1 text-sm text-white/50">
-                              {g.studio}
-                            </div>
+                            <div className="mt-1 text-sm text-white/50">{g.studio}</div>
                           ) : null}
                         </div>
                       );

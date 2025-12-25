@@ -13,6 +13,42 @@ type StoryRow = {
   created_at: string;
 };
 
+type TopStoryDbRow = {
+  id: unknown;
+  slug: unknown;
+  title: unknown;
+  subtitle: unknown;
+  summary: unknown;
+  image_url: unknown;
+  created_at: unknown;
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function asString(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function asNullableString(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+function mapStoryRow(raw: unknown): StoryRow {
+  const r: TopStoryDbRow = isRecord(raw) ? (raw as TopStoryDbRow) : ({} as TopStoryDbRow);
+
+  return {
+    id: String(r.id ?? ""),
+    slug: asNullableString(r.slug),
+    title: asString(r.title, "Untitled"),
+    subtitle: asNullableString(r.subtitle),
+    summary: asNullableString(r.summary),
+    image_url: asNullableString(r.image_url),
+    created_at: String(r.created_at ?? ""),
+  };
+}
+
 function fmtDate(d: string) {
   try {
     return new Date(d).toLocaleDateString();
@@ -30,16 +66,7 @@ export default async function NewsIndexPage() {
     .order("created_at", { ascending: false })
     .limit(30);
 
-  const stories: StoryRow[] =
-    data?.map((s: any) => ({
-      id: String(s.id),
-      slug: (s.slug as string | null) ?? null,
-      title: String(s.title ?? "Untitled"),
-      subtitle: (s.subtitle as string | null) ?? null,
-      summary: (s.summary as string | null) ?? null,
-      image_url: (s.image_url as string | null) ?? null,
-      created_at: String(s.created_at ?? ""),
-    })) ?? [];
+  const stories: StoryRow[] = Array.isArray(data) ? data.map(mapStoryRow) : [];
 
   const hero = stories[0] ?? null;
   const rest = stories.slice(1);
@@ -97,7 +124,7 @@ export default async function NewsIndexPage() {
             {/* Overlay for text readability */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
 
-            {/* Text inside image (like you wanted earlier) */}
+            {/* Text inside image */}
             <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
               <p className="text-[11px] sm:text-xs uppercase tracking-wide text-white/70">
                 {fmtDate(hero.created_at)}
@@ -147,7 +174,7 @@ export default async function NewsIndexPage() {
                   )}
                 </div>
 
-                {/* text (same vibe as other pages) */}
+                {/* text */}
                 <div className="min-w-0">
                   <p className="text-[11px] sm:text-xs uppercase tracking-wide text-white/60">
                     {fmtDate(s.created_at)}

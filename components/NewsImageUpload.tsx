@@ -3,11 +3,11 @@
 
 import { useState } from "react";
 import Cropper, { Area } from "react-easy-crop";
-import { uploadGameImage } from "@/lib/actions/games"; // same action you already use
+import { uploadGameImage } from "@/lib/actions/games";
 
 type Props = {
   label?: string;
-  value: string;               // current image URL
+  value: string; // current image URL
   onChange: (url: string) => void;
 };
 
@@ -23,14 +23,10 @@ function createImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-async function getCroppedBlob(
-  imageSrc: string,
-  cropPixels: Area,
-): Promise<Blob> {
+async function getCroppedBlob(imageSrc: string, cropPixels: Area): Promise<Blob> {
   const image = await createImage(imageSrc);
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-
   if (!ctx) throw new Error("Could not get canvas context");
 
   const { width, height, x, y } = cropPixels;
@@ -38,24 +34,23 @@ async function getCroppedBlob(
   canvas.width = width;
   canvas.height = height;
 
-  ctx.drawImage(
-    image,
-    x,
-    y,
-    width,
-    height,
-    0,
-    0,
-    width,
-    height,
-  );
+  ctx.drawImage(image, x, y, width, height, 0, 0, width, height);
 
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) return reject(new Error("Canvas is empty"));
-      resolve(blob);
-    }, "image/jpeg");
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return reject(new Error("Canvas is empty"));
+        resolve(blob);
+      },
+      "image/jpeg",
+      0.9,
+    );
   });
+}
+
+function toJpgName(name: string) {
+  const base = name.replace(/\.[^.]+$/, "");
+  return `${base || "news-image"}.jpg`;
 }
 
 /* ---------- component ---------- */
@@ -113,15 +108,20 @@ export default function NewsImageUpload({ label, value, onChange }: Props) {
       setError(null);
 
       const blob = await getCroppedBlob(localSrc, croppedAreaPixels);
-      const fileName = pendingFileName || "news-image.jpg";
+
+      const originalName = pendingFileName || "news-image.png";
+      const fileName = toJpgName(originalName);
       const file = new File([blob], fileName, { type: "image/jpeg" });
 
       const res = await uploadGameImage(file);
-      if (!res.success || !res.url) {
+
+      // ✅ Proper union narrowing (fixes TS error)
+      if (!res.success) {
         setError(res.error || "Failed to upload image.");
         return;
       }
 
+      // success
       onChange(res.url);
 
       setModalOpen(false);
@@ -145,20 +145,14 @@ export default function NewsImageUpload({ label, value, onChange }: Props) {
 
   return (
     <div className="space-y-1">
-      {label && (
-        <label className="text-xs text-white/60 block mb-1">{label}</label>
-      )}
+      {label && <label className="text-xs text-white/60 block mb-1">{label}</label>}
 
       {/* small inline preview + button */}
       <div className="flex items-center gap-3">
         <div className="relative h-16 w-28 overflow-hidden rounded-md border border-white/15 bg-black/40">
           {value ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={value}
-              alt="Preview"
-              className="h-full w-full object-cover"
-            />
+            <img src={value} alt="Preview" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-[11px] text-white/40">
               No image
@@ -180,8 +174,7 @@ export default function NewsImageUpload({ label, value, onChange }: Props) {
 
       {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
       <p className="text-[11px] text-white/40">
-        JPG / PNG / WEBP, max ~5MB. You can drag to reposition and zoom before
-        saving.
+        JPG / PNG / WEBP, max ~5MB. You can drag to reposition and zoom before saving.
       </p>
 
       {/* ---------- MODAL WITH CROPPER ---------- */}

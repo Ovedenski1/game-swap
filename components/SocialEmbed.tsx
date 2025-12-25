@@ -7,15 +7,18 @@ import { Tweet } from "react-tweet";
 
 export type EmbedSize = "default" | "wide" | "compact";
 
-type SocialEmbedProps = {
+export type SocialEmbedProps = {
   url: string;
   title?: string;
   size?: EmbedSize;
 };
 
-// super loose typing so TS doesn't complain about react-player props
-const ReactPlayerAny =
-  ReactPlayer as unknown as React.ComponentType<Record<string, any>>;
+/**
+ * react-player typings vary by version. To avoid `any` and TS errors,
+ * we cast it to a generic React component.
+ */
+const TypedReactPlayer =
+  ReactPlayer as unknown as React.ComponentType<Record<string, unknown>>;
 
 function getHost(url: string): string | null {
   try {
@@ -30,39 +33,33 @@ function getTweetId(url: string): string | null {
   try {
     const u = new URL(url);
 
-    // Normal X/Twitter URL
-    const pathMatch = u.pathname.match(/status\/(\d+)/);
-    if (pathMatch?.[1]) return pathMatch[1];
+    // Normal Twitter / X URL
+    const match = u.pathname.match(/status\/(\d+)/);
+    if (match?.[1]) return match[1];
 
-    // Old iframe style: platform.twitter.com/embed/Tweet.html?id=...
-    const idParam = u.searchParams.get("id");
-    if (idParam) return idParam;
+    // Old embed format
+    const id = u.searchParams.get("id");
+    if (id) return id;
   } catch {
     return null;
   }
   return null;
 }
 
-// Build a clean YouTube embed URL from any YouTube link
 function getYouTubeEmbedUrl(raw: string): string | null {
   try {
     const u = new URL(raw);
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
 
-    // youtu.be/VIDEO_ID
     if (host === "youtu.be") {
       return `https://www.youtube.com/embed${u.pathname}`;
     }
 
     if (host.endsWith("youtube.com")) {
-      // watch?v=VIDEO_ID
       const v = u.searchParams.get("v");
       if (v) return `https://www.youtube.com/embed/${v}`;
 
-      // already an /embed/ URL
-      if (u.pathname.startsWith("/embed/")) {
-        return raw;
-      }
+      if (u.pathname.startsWith("/embed/")) return raw;
     }
   } catch {
     return null;
@@ -70,15 +67,10 @@ function getYouTubeEmbedUrl(raw: string): string | null {
   return null;
 }
 
-export const SocialEmbed: React.FC<SocialEmbedProps> = ({
-  url,
-  title,
-  size,
-}) => {
+export const SocialEmbed: React.FC<SocialEmbedProps> = ({ url, title, size }) => {
   const host = getHost(url);
   if (!host) return null;
 
-  // Shared sizing for FB / YouTube / ReactPlayer
   let aspectClass = "aspect-[16/9]";
   let maxWidthClass = "w-full";
 
@@ -90,11 +82,7 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
   }
 
   /* ---------- TWITTER / X ---------- */
-  if (
-    host === "twitter.com" ||
-    host === "x.com" ||
-    host === "platform.twitter.com"
-  ) {
+  if (host === "twitter.com" || host === "x.com" || host === "platform.twitter.com") {
     const id = getTweetId(url);
     if (!id) return null;
 
@@ -102,7 +90,7 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
       <figure className="mt-4 w-full max-w-xl">
         <Tweet id={id} />
         {title && (
-          <figcaption className="mt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
+          <figcaption className="mt-2 text-xs text-white/60 break-words whitespace-pre-wrap">
             {title}
           </figcaption>
         )}
@@ -110,17 +98,19 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
     );
   }
 
-  /* ---------- FACEBOOK POST ---------- */
+  /* ---------- FACEBOOK ---------- */
   if (host.includes("facebook.com") || host === "fb.watch") {
     let src = url;
+
     try {
       const u = new URL(url);
       if (!u.pathname.startsWith("/plugins/post.php")) {
-        const href = encodeURIComponent(url);
-        src = `https://www.facebook.com/plugins/post.php?href=${href}&show_text=true`;
+        src = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(
+          url
+        )}&show_text=true`;
       }
     } catch {
-      // ignore – fall back to original url
+      // ignore
     }
 
     return (
@@ -137,8 +127,9 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
             allowFullScreen
           />
         </div>
+
         {title && (
-          <figcaption className="mt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
+          <figcaption className="mt-2 text-xs text-white/60 break-words whitespace-pre-wrap">
             {title}
           </figcaption>
         )}
@@ -146,27 +137,25 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
     );
   }
 
-  /* ---------- YOUTUBE (explicit iframe) ---------- */
-
-  const ytEmbed = getYouTubeEmbedUrl(url);
-
-  if (ytEmbed) {
-    // Clean YouTube iframe – most robust
+  /* ---------- YOUTUBE ---------- */
+  const yt = getYouTubeEmbedUrl(url);
+  if (yt) {
     return (
       <figure className={`mt-4 ${maxWidthClass}`}>
         <div
           className={`relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 ${aspectClass}`}
         >
           <iframe
-            src={ytEmbed}
+            src={yt}
             title={title || "YouTube video"}
             className="absolute inset-0 h-full w-full border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />
         </div>
+
         {title && (
-          <figcaption className="mt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
+          <figcaption className="mt-2 text-xs text-white/60 break-words whitespace-pre-wrap">
             {title}
           </figcaption>
         )}
@@ -174,26 +163,28 @@ export const SocialEmbed: React.FC<SocialEmbedProps> = ({
     );
   }
 
-  /* ---------- OTHER VIDEO / AUDIO (ReactPlayer) ---------- */
-
+  /* ---------- OTHER VIDEO / AUDIO ---------- */
   return (
     <figure className={`mt-4 ${maxWidthClass}`}>
       <div
         className={`relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 ${aspectClass}`}
       >
-        <ReactPlayerAny
+        <TypedReactPlayer
           url={url}
           width="100%"
           height="100%"
-          style={{ position: "absolute", inset: 0 }}
           controls
+          style={{ position: "absolute", inset: 0 }}
         />
       </div>
+
       {title && (
-        <figcaption className="mt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
+        <figcaption className="mt-2 text-xs text-white/60 break-words whitespace-pre-wrap">
           {title}
         </figcaption>
       )}
     </figure>
   );
 };
+
+export default SocialEmbed;

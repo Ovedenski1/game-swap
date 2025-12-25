@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { createRentalRequest } from "@/lib/actions/rentals";
+import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { createRentalRequest } from "@/lib/actions/rentals";
 
 export default function RentForm({ gameId }: { gameId: string }) {
   const router = useRouter();
@@ -18,29 +18,36 @@ export default function RentForm({ gameId }: { gameId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
 
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    const addr = shippingAddress.trim();
+    const c = city.trim();
+    const phone = phoneNumber.trim();
+    const n = notes.trim();
+
     // ✅ Input validation
-    if (!firstName.trim() || !lastName.trim()) {
+    if (!fn || !ln) {
       setError("Please enter your first and last name.");
       return;
     }
 
-    if (firstName.length < 2 || lastName.length < 2) {
+    if (fn.length < 2 || ln.length < 2) {
       setError("Names must be at least 2 characters long.");
       return;
     }
 
-    if (!shippingAddress.trim() || !city.trim()) {
+    if (!addr || !c) {
       setError("Please fill in your full address and city.");
       return;
     }
 
     const phoneRegex = /^\d{9,15}$/;
-    if (!phoneRegex.test(phoneNumber.trim())) {
+    if (!phoneRegex.test(phone)) {
       setError("Please enter a valid phone number (digits only).");
       return;
     }
@@ -49,13 +56,13 @@ export default function RentForm({ gameId }: { gameId: string }) {
       try {
         await createRentalRequest(
           gameId,
-          shippingAddress.trim(),
+          addr,
           deliveryType,
-          phoneNumber.trim(),
-          firstName.trim(),
-          lastName.trim(),
-          city.trim(),
-          notes.trim() || undefined
+          phone,
+          fn,
+          ln,
+          c,
+          n || undefined,
         );
 
         setSuccess("Your rental request was successfully submitted!");
@@ -67,8 +74,9 @@ export default function RentForm({ gameId }: { gameId: string }) {
         setPhoneNumber("");
         setNotes("");
         router.refresh();
-      } catch (err: any) {
-        setError(err?.message || "Failed to create request.");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg || "Failed to create request.");
       }
     });
   }
@@ -93,6 +101,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
               placeholder="Your first name"
             />
           </div>
+
           <div>
             <label className="text-xs text-white/70">Last name</label>
             <input
@@ -112,7 +121,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
             required
             value={shippingAddress}
             onChange={(e) => setShippingAddress(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-sm outline-none resize-none" // 🚫 No manual resizing
+            className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-sm outline-none resize-none"
             rows={3}
             placeholder="Street, postal code, country..."
           />
@@ -143,6 +152,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
               />
               Home
             </label>
+
             <label className="flex items-center gap-2">
               <input
                 type="radio"
@@ -161,6 +171,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
           <input
             required
             type="tel"
+            inputMode="numeric"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
             className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-sm outline-none"
@@ -174,7 +185,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-sm outline-none resize-none" // 🚫 No manual resizing
+            className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-sm outline-none resize-none"
             rows={2}
             placeholder="Any extra details?"
           />
@@ -184,6 +195,7 @@ export default function RentForm({ gameId }: { gameId: string }) {
         {success && <div className="text-sm text-lime-400">{success}</div>}
 
         <button
+          type="submit"
           disabled={pending}
           className="w-full rounded-xl bg-lime-400 text-black font-bold py-3 hover:bg-lime-300 disabled:opacity-60 transition-all"
         >

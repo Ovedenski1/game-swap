@@ -3,6 +3,16 @@
 import { createClient } from "../supabase/server";
 import type { GamePlatform } from "@/types/game";
 
+/* =========================================================================
+ * Helpers (no `any`, stable runtime)
+ * =======================================================================*/
+
+type Row = Record<string, unknown>;
+
+function asRow(v: unknown): Row {
+  return typeof v === "object" && v !== null ? (v as Row) : {};
+}
+
 /* ========= PREFERRED PLATFORMS ========= */
 
 export async function upsertPreferredPlatforms(
@@ -35,12 +45,13 @@ export async function upsertPreferredPlatforms(
     return { success: false, error: "Failed to load preferences." };
   }
 
-  const currentPrefs = (data?.preferences || {}) as any;
-  currentPrefs.preferred_platforms = platforms;
+  // preferences could be null, an object, or something else (avoid `any`)
+  const currentPrefs = asRow((data as Row | null | undefined)?.preferences);
+  const nextPrefs: Row = { ...currentPrefs, preferred_platforms: platforms };
 
   const { error: updateErr } = await supabase
     .from("users")
-    .update({ preferences: currentPrefs })
+    .update({ preferences: nextPrefs })
     .eq("id", user.id);
 
   if (updateErr) {

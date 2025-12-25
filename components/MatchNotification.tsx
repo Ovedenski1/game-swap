@@ -2,7 +2,7 @@
 "use client";
 
 import Image from "next/image";
-import type { UserProfile } from "@/app/profile/page";
+import type { UserProfile } from "@/components/ProfilePage";
 
 interface MatchNotificationProps {
   match: UserProfile;

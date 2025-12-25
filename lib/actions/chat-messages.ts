@@ -3,10 +3,36 @@
 
 import { createClient } from "../supabase/server";
 
+/* =============================
+   Types
+============================= */
+
+type MatchRow = {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  is_active: boolean;
+};
+
+type ChatMessageRow = {
+  match_id: string;
+  sender_id: string;
+  created_at: string;
+};
+
+type ChatReadRow = {
+  match_id: string;
+  last_read_at: string;
+};
+
+/* =============================
+   Actions
+============================= */
+
 /**
  * Save / update the *last* message for a match (one row per match_id)
  */
-export async function logChatMessage(matchId: string, content: string) {
+export async function logChatMessage(matchId: string, content: string): Promise<void> {
   const supabase = await createClient();
 
   const {
@@ -32,7 +58,7 @@ export async function logChatMessage(matchId: string, content: string) {
         content,
         created_at: new Date().toISOString(),
       },
-      { onConflict: "match_id" }
+      { onConflict: "match_id" },
     );
 
   if (error) {
@@ -44,7 +70,7 @@ export async function logChatMessage(matchId: string, content: string) {
  * Mark a conversation as "read" for the current user
  * (called when you open a chat)
  */
-export async function markChatRead(matchId: string) {
+export async function markChatRead(matchId: string): Promise<void> {
   const supabase = await createClient();
 
   const {
@@ -71,9 +97,7 @@ export async function markChatRead(matchId: string) {
         user_id: user.id,
         last_read_at: now,
       },
-      {
-        onConflict: "match_id,user_id",
-      }
+      { onConflict: "match_id,user_id" },
     );
 
   if (error) {
@@ -98,41 +122,41 @@ export async function getUnreadChatCount(): Promise<number> {
     return 0;
   }
 
-  if (!user) {
-    return 0;
-  }
+  if (!user) return 0;
 
   // 1) All active matches for this user
-  const { data: matches, error: matchesErr } = await supabase
+  const { data: matchesRaw, error: matchesErr } = await supabase
     .from("matches")
     .select("id, user1_id, user2_id, is_active")
     .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
     .eq("is_active", true);
 
-  if (matchesErr) {
+  if (matchesErr || !matchesRaw) {
     console.error("getUnreadChatCount matches error:", matchesErr);
     return 0;
   }
 
-  if (!matches || matches.length === 0) return 0;
+  const matches = matchesRaw as unknown as MatchRow[];
+  if (matches.length === 0) return 0;
 
-  const matchIds = matches.map((m) => m.id as string);
+  const matchIds = matches.map((m) => m.id);
 
   // 2) Last message per match (we already store exactly one per match)
-  const { data: lastMessages, error: msgErr } = await supabase
+  const { data: lastMessagesRaw, error: msgErr } = await supabase
     .from("chat_messages")
     .select("match_id, sender_id, created_at")
     .in("match_id", matchIds);
 
-  if (msgErr) {
+  if (msgErr || !lastMessagesRaw) {
     console.error("getUnreadChatCount messages error:", msgErr);
     return 0;
   }
 
-  if (!lastMessages || lastMessages.length === 0) return 0;
+  const lastMessages = lastMessagesRaw as unknown as ChatMessageRow[];
+  if (lastMessages.length === 0) return 0;
 
   // 3) Read markers for this user
-  const { data: reads, error: readsErr } = await supabase
+  const { data: readsRaw, error: readsErr } = await supabase
     .from("chat_reads")
     .select("match_id, last_read_at")
     .eq("user_id", user.id)
@@ -143,31 +167,25 @@ export async function getUnreadChatCount(): Promise<number> {
     return 0;
   }
 
+  const reads = (readsRaw ?? []) as unknown as ChatReadRow[];
+
   const readMap = new Map<string, string>();
-  (reads ?? []).forEach((r) => {
-    readMap.set(r.match_id as string, r.last_read_at as string);
-  });
+  for (const r of reads) readMap.set(r.match_id, r.last_read_at);
 
   // 4) Count how many matches have an unread last message
   let unreadChats = 0;
 
   for (const msg of lastMessages) {
-    const matchId = msg.match_id as string;
-    const senderId = msg.sender_id as string;
-    const createdAt = msg.created_at as string;
-
     // Last message must be from OTHER user
-    if (senderId === user.id) continue;
+    if (msg.sender_id === user.id) continue;
 
-    const lastReadAt = readMap.get(matchId);
+    const lastReadAt = readMap.get(msg.match_id);
 
     const isUnread =
       !lastReadAt ||
-      new Date(createdAt).getTime() > new Date(lastReadAt).getTime();
+      new Date(msg.created_at).getTime() > new Date(lastReadAt).getTime();
 
-    if (isUnread) {
-      unreadChats += 1;
-    }
+    if (isUnread) unreadChats += 1;
   }
 
   return unreadChats;

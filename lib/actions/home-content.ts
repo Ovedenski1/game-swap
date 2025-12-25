@@ -4,6 +4,46 @@ import { createClient } from "../supabase/server";
 import type { NewsItem } from "@/components/NewsCard";
 
 /* =========================================================================
+ * Small, safe helpers (avoid `any`, keep runtime behavior stable)
+ * =======================================================================*/
+
+type Row = Record<string, unknown>;
+
+function asRow(v: unknown): Row {
+  return typeof v === "object" && v !== null ? (v as Row) : {};
+}
+
+function toStringValue(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : v == null ? fallback : String(v);
+}
+
+function toNullableString(v: unknown): string | null {
+  return v == null ? null : typeof v === "string" ? v : String(v);
+}
+
+function toNumberValue(v: unknown, fallback = 0): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  return fallback;
+}
+
+function toNullableNumber(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toStringArrayOrNull(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  // Keep original behavior: if it's an array, return it as string[]
+  // (Supabase usually returns string[] already; this avoids breaking anything.)
+  return v as string[];
+}
+
+/* =========================================================================
  * UPCOMING GAMES (Home + Public)
  * =======================================================================*/
 
@@ -20,18 +60,20 @@ export type UpcomingGameRow = {
   link_url: string | null;
 };
 
-function mapUpcoming(row: any): UpcomingGameRow {
+function mapUpcoming(rowInput: unknown): UpcomingGameRow {
+  const row = asRow(rowInput);
+
   return {
-    id: String(row.id),
-    year: Number(row.year),
-    month: Number(row.month),
-    day: row.day === null || row.day === undefined ? null : Number(row.day),
-    title: String(row.title ?? ""),
-    studio: row.studio ?? null,
-    platforms: Array.isArray(row.platforms) ? (row.platforms as string[]) : null,
-    details_html: row.details_html ?? null,
-    sort_order: Number(row.sort_order ?? 0),
-    link_url: (row.link_url as string | null) ?? null,
+    id: toStringValue(row.id),
+    year: toNumberValue(row.year),
+    month: toNumberValue(row.month),
+    day: toNullableNumber(row.day),
+    title: toStringValue(row.title ?? ""),
+    studio: toNullableString(row.studio),
+    platforms: toStringArrayOrNull(row.platforms),
+    details_html: toNullableString(row.details_html),
+    sort_order: toNumberValue(row.sort_order ?? 0),
+    link_url: toNullableString(row.link_url),
   };
 }
 
@@ -57,7 +99,7 @@ export async function getUpcomingGamesForHome(args: {
     return [];
   }
 
-  return data.map(mapUpcoming);
+  return (data as unknown[]).map(mapUpcoming);
 }
 
 export async function getUpcomingGamesForYear(
@@ -81,7 +123,7 @@ export async function getUpcomingGamesForYear(
     return [];
   }
 
-  return data.map(mapUpcoming);
+  return (data as unknown[]).map(mapUpcoming);
 }
 
 /* =========================================================================
@@ -103,11 +145,16 @@ export async function getHeroSlidesForHome(): Promise<CarouselSlide[]> {
     return [];
   }
 
-  return data.map((row: any) => ({
-    src: row.image_url as string,
-    alt: (row.title as string) || "Featured",
-    href: (row.link_url as string) || undefined,
-  }));
+  return (data as unknown[]).map((rowInput) => {
+    const row = asRow(rowInput);
+    const href = toNullableString(row.link_url);
+
+    return {
+      src: toStringValue(row.image_url),
+      alt: toStringValue(row.title, "Featured") || "Featured",
+      href: href || undefined,
+    };
+  });
 }
 
 /* =========================================================================
@@ -130,14 +177,29 @@ export async function getTopStoriesForHome(): Promise<NewsItem[]> {
     return [];
   }
 
-  return data.map((row: any) => ({
-    id: row.id,
-    title: row.title,
-    img: row.image_url,
-    href: row.link_url || `/news/${row.slug ?? row.id}`,
-    subtitle: row.subtitle ?? row.summary ?? undefined,
-    isSpoiler: row.is_spoiler ?? false,
-  }));
+  return (data as unknown[]).map((rowInput) => {
+    const row = asRow(rowInput);
+
+    const idStr = toStringValue(row.id);
+    const slugStr = row.slug == null ? null : toStringValue(row.slug);
+    const linkUrl = toNullableString(row.link_url);
+
+    const subtitle =
+      row.subtitle != null
+        ? toStringValue(row.subtitle)
+        : row.summary != null
+          ? toStringValue(row.summary)
+          : undefined;
+
+    return {
+      id: row.id as NewsItem["id"], // keep id type consistent with your NewsItem definition
+      title: toStringValue(row.title),
+      img: toStringValue(row.image_url),
+      href: linkUrl || `/news/${slugStr ?? idStr}`,
+      subtitle,
+      isSpoiler: Boolean(row.is_spoiler ?? false),
+    };
+  });
 }
 
 /* =========================================================================
@@ -167,14 +229,20 @@ export async function getLatestRatingsForHome(): Promise<HomeRatingItem[]> {
     return [];
   }
 
-  return data.map((r: any) => ({
-    id: String(r.id),
-    slug: (r.slug as string | null) ?? null,
-    title: String(r.game_title ?? ""),
-    img: String(r.image_url ?? ""),
-    badge: Number(r.score ?? 0).toFixed(1),
-    subtitle: (r.summary as string | null) ?? undefined,
-  }));
+  return (data as unknown[]).map((rowInput) => {
+    const r = asRow(rowInput);
+
+    const score = toNumberValue(r.score ?? 0);
+
+    return {
+      id: toStringValue(r.id),
+      slug: r.slug == null ? null : toStringValue(r.slug),
+      title: toStringValue(r.game_title ?? ""),
+      img: toStringValue(r.image_url ?? ""),
+      badge: score.toFixed(1),
+      subtitle: r.summary == null ? undefined : toStringValue(r.summary),
+    };
+  });
 }
 
 /* =========================================================================
@@ -216,25 +284,41 @@ export async function getPlayersGameOfMonthForHome(): Promise<PlayersGameOfMonth
     };
   }
 
-  const items: PlayersGameOfMonthHomeItem[] = data.map((row: any) => ({
-    id: String(row.id),
-    position: Number(row.position),
-    title: row.title ?? null,
-    image_url: row.image_url ?? null,
-    link_url: row.link_url ?? null,
-  }));
+  const rows = data as unknown[];
+
+  const items: PlayersGameOfMonthHomeItem[] = rows.map((rowInput) => {
+    const row = asRow(rowInput);
+    return {
+      id: toStringValue(row.id),
+      position: toNumberValue(row.position),
+      title: toNullableString(row.title),
+      image_url: toNullableString(row.image_url),
+      link_url: toNullableString(row.link_url),
+    };
+  });
+
+  // Preserve your original "find-first-row-that-has-value" logic.
+  const totalVotesRow = rows.find((r) => toNullableNumber(asRow(r).total_votes) != null);
+  const votesHrefRow = rows.find((r) => {
+    const v = toNullableString(asRow(r).votes_link_url);
+    return Boolean(v);
+  });
+  const monthLabelRow = rows.find((r) => {
+    const v = toNullableString(asRow(r).month_label);
+    return Boolean(v);
+  });
 
   const totalVotes =
-    data.find((r: any) => r.total_votes != null)?.total_votes ?? 110;
+    totalVotesRow != null ? toNullableNumber(asRow(totalVotesRow).total_votes) : null;
   const votesHref =
-    data.find((r: any) => r.votes_link_url)?.votes_link_url ?? "/polls";
+    votesHrefRow != null ? toNullableString(asRow(votesHrefRow).votes_link_url) : null;
   const monthLabel =
-    data.find((r: any) => r.month_label)?.month_label ?? "THIS MONTH";
+    monthLabelRow != null ? toNullableString(asRow(monthLabelRow).month_label) : null;
 
   return {
     items,
-    totalVotesText: `${Number(totalVotes)} VOTES`,
-    votesHref,
-    monthLabel,
+    totalVotesText: `${Number(totalVotes ?? 110)} VOTES`,
+    votesHref: votesHref ?? "/polls",
+    monthLabel: monthLabel ?? "THIS MONTH",
   };
 }

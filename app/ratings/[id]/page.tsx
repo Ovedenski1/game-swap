@@ -3,11 +3,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import { adminGetRatings } from "@/lib/actions/admin-content";
 import StoryGallery from "@/components/StoryGallery";
-import { SocialEmbed } from "@/components/SocialEmbed";
+import SocialEmbed, { type EmbedSize } from "@/components/SocialEmbed";
 import { PlatformIcons } from "@/components/PlatformIcons";
 
 /* ------------------------------------------------------------------ */
@@ -22,7 +23,6 @@ type CardMediaType = "none" | "video" | "imageGrid";
 type CardLayout = "mediaTop" | "mediaBottom" | "mediaLeft" | "mediaRight";
 type CardMediaSizeMode = "fixed" | "flex";
 type CardWidth = "narrow" | "full";
-type EmbedSize = "default" | "wide" | "compact";
 
 type ReviewBlock =
   | { id?: string; type: "media" }
@@ -56,16 +56,79 @@ type ReviewBlock =
       withBackground?: boolean;
     }
   | { id?: string; type: "divider" }
-  | { [key: string]: any };
+  | { id?: string; type?: string; [key: string]: unknown };
+
+type RatingRow = {
+  id: string;
+  slug: string | null;
+  game_title: string | null;
+  score: number | null;
+  summary: string | null;
+  image_url: string | null;
+  developer: string | null;
+  publisher: string | null;
+  release_date: string | null;
+  platforms: unknown;
+  genres: unknown;
+  hours_main: number | null;
+  hours_main_plus: number | null;
+  hours_completionist: number | null;
+  hours_all_styles: number | null;
+  trailer_url: string | null;
+  gallery_images: unknown;
+  review_body: string | null;
+  reviewer_name: string | null;
+  reviewer_avatar_url: string | null;
+  verdict_label: string | null;
+  created_at: string;
+};
+
+type RatingSummary = {
+  id: string;
+  slug?: string | null;
+  img: string;
+  game_title: string;
+  subtitle?: string | null;
+  score: number;
+};
+
+type MoreStoryRow = {
+  id: string;
+  slug: string | null;
+  title: string;
+  subtitle: string | null;
+  image_url: string | null;
+  created_at: string;
+};
+
+/* ------------------------------------------------------------------ */
+/* Safe helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(v: unknown): v is UnknownRecord {
+  return typeof v === "object" && v !== null;
+}
+
+function getString(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+function getOptionalString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function isEmbedSize(v: unknown): v is EmbedSize {
+  return v === "default" || v === "wide" || v === "compact";
+}
 
 /* ------------------------------------------------------------------ */
 /* Fetch helper – id OR slug                                          */
 /* ------------------------------------------------------------------ */
 
 function looksLikeUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value
-  );
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function fetchRatingByIdOrSlug(idOrSlug: string) {
@@ -97,21 +160,17 @@ async function fetchRatingByIdOrSlug(idOrSlug: string) {
     `);
 
   const isUuid = looksLikeUuid(idOrSlug);
-  const query = isUuid
-    ? baseSelect.eq("id", idOrSlug)
-    : baseSelect.eq("slug", idOrSlug);
+  const query = isUuid ? baseSelect.eq("id", idOrSlug) : baseSelect.eq("slug", idOrSlug);
 
   const { data, error } = await query.maybeSingle();
-  return { data, error };
+  return { data: data as RatingRow | null, error };
 }
 
 /* ------------------------------------------------------------------ */
 /* Metadata                                                           */
 /* ------------------------------------------------------------------ */
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const resolvedParams = params instanceof Promise ? await params : params;
   const { id } = resolvedParams;
 
@@ -125,19 +184,19 @@ export async function generateMetadata({
   }
 
   const siteName = "GameLink";
-  const rawTitle = `${data.game_title as string} review`;
+  const rawTitle = `${String(data.game_title ?? "Game")} review`;
   const fullTitle = `${rawTitle} | ${siteName}`;
 
   const rawDescription =
-    (data.summary as string | null) ??
-    (data.verdict_label as string | null) ??
+    data.summary ??
+    data.verdict_label ??
     "Game reviews and ratings on GameLink.";
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const pathSegment = (data.slug as string | null) ?? String(data.id);
+  const pathSegment = data.slug ?? String(data.id);
   const canonicalUrl = `${baseUrl}/ratings/${pathSegment}`;
 
-  const coverImage = (data.image_url as string | null) ?? null;
+  const coverImage = data.image_url ?? null;
 
   return {
     title: fullTitle,
@@ -168,9 +227,11 @@ function getYouTubeEmbedUrl(url: string | undefined): string | null {
   if (!url) return null;
   try {
     const u = new URL(url);
-    if (u.hostname === "youtu.be" || u.hostname.endsWith("youtube.com")) {
-      if (u.hostname === "youtu.be")
-        return `https://www.youtube.com/embed${u.pathname}`;
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+
+    if (host === "youtu.be") return `https://www.youtube.com/embed${u.pathname}`;
+
+    if (host.endsWith("youtube.com")) {
       const v = u.searchParams.get("v");
       if (v) return `https://www.youtube.com/embed/${v}`;
       if (u.pathname.startsWith("/embed/")) return url;
@@ -203,10 +264,7 @@ function cardVariantClasses(variant: string | undefined) {
 
 function splitByMedia(blocks: ReviewBlock[]) {
   const idx = blocks.findIndex((b) => b?.type === "media");
-  const before =
-    idx >= 0
-      ? blocks.slice(0, idx).filter((b) => b?.type !== "media")
-      : [];
+  const before = idx >= 0 ? blocks.slice(0, idx).filter((b) => b?.type !== "media") : [];
   const after =
     idx >= 0
       ? blocks.slice(idx + 1).filter((b) => b?.type !== "media")
@@ -250,14 +308,13 @@ function getScoreBoxStyle(scoreValue: number | null) {
   if (scoreValue <= 9) return { background: "#f3d05e", color: "#111" } as const;
 
   return {
-    background:
-      "linear-gradient(135deg, #a855f7 0%, #7c3aed 35%, #22d3ee 100%)",
+    background: "linear-gradient(135deg, #a855f7 0%, #7c3aed 35%, #22d3ee 100%)",
     color: "#fff",
   } as const;
 }
 
 /* ------------------------------------------------------------------ */
-/* Platforms filter (remove red-X ones, keep only allowed)             */
+/* Platforms filter                                                   */
 /* ------------------------------------------------------------------ */
 
 const ALLOWED_PLATFORMS = new Set<string>([
@@ -271,9 +328,7 @@ const ALLOWED_PLATFORMS = new Set<string>([
 ]);
 
 function filterPlatforms(input: string[]): string[] {
-  const cleaned = (input ?? [])
-    .map((p) => String(p || "").trim())
-    .filter(Boolean);
+  const cleaned = (input ?? []).map((p) => String(p || "").trim()).filter(Boolean);
 
   const out: string[] = [];
   for (const p of cleaned) {
@@ -285,22 +340,17 @@ function filterPlatforms(input: string[]): string[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* Genres inline (NO mt hacks)                                         */
+/* Genres inline                                                      */
 /* ------------------------------------------------------------------ */
 
 function GenresInline({ genres }: { genres: string[] }) {
-  const clean = (genres ?? [])
-    .map((g) => String(g || "").trim())
-    .filter(Boolean);
+  const clean = (genres ?? []).map((g) => String(g || "").trim()).filter(Boolean);
   if (!clean.length) return null;
 
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-white/75">
       {clean.map((g) => (
-        <span
-          key={`genre-inline-${g}`}
-          className="font-semibold tracking-wide whitespace-nowrap"
-        >
+        <span key={`genre-inline-${g}`} className="font-semibold tracking-wide whitespace-nowrap">
           {g}
         </span>
       ))}
@@ -313,19 +363,18 @@ function GenresInline({ genres }: { genres: string[] }) {
 /* ------------------------------------------------------------------ */
 
 function renderBlock(block: ReviewBlock, index: number) {
-  const key = (block as any).id ?? index;
+  const key = typeof block.id === "string" && block.id ? block.id : index;
 
   switch (block.type) {
     case "media":
       return null;
 
     case "heading": {
-      const level = (block as any).level ?? 2;
-      const text = (block as any).text ?? "";
+      const level = block.level ?? 2;
+      const text = getString(block.text);
       if (!text) return null;
 
-      const baseClasses =
-        "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
+      const baseClasses = "mt-6 mb-2 font-extrabold tracking-tight text-white break-words";
       const h2Classes = "text-2xl sm:text-[26px]";
       const h3Classes = "text-xl sm:text-[20px]";
 
@@ -341,7 +390,7 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "paragraph": {
-      const text = (block as any).text ?? "";
+      const text = getString(block.text);
       if (!text) return null;
       return (
         <div
@@ -353,8 +402,8 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "image": {
-      const url = (block as any).url ?? "";
-      const caption = (block as any).caption ?? "";
+      const url = getString(block.url);
+      const caption = getString(block.caption);
       if (!url) return null;
 
       return (
@@ -381,7 +430,7 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "quote": {
-      const text = (block as any).text ?? "";
+      const text = getString(block.text);
       if (!text) return null;
       return (
         <blockquote
@@ -394,27 +443,27 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "embed": {
-      const url = (block as any).url ?? "";
-      const embedTitle = (block as any).title ?? "";
-      const size = (block as any).size as EmbedSize | undefined;
+      const url = getString(block.url);
       if (!url) return null;
-      return <SocialEmbed key={key} url={url} title={embedTitle} size={size} />;
+
+      const title = getOptionalString(block.title);
+      const size = isEmbedSize(block.size) ? block.size : undefined;
+
+      return <SocialEmbed key={key} url={url} title={title} size={size} />;
     }
 
     case "gallery": {
-      const b: any = block;
-      const title = b.title ?? "";
-      const images = Array.isArray(b.images)
-        ? b.images.filter((img: any) => img && img.url)
+      const title = getString(block.title);
+      const images = Array.isArray(block.images)
+        ? block.images.filter((img) => img && typeof img.url === "string" && Boolean(img.url))
         : [];
-      const withBackground = b.withBackground ?? false;
 
       if (!images.length) return null;
 
-      const galleryImages = images.map((img: any, imgIndex: number) => ({
-        id: img.id ?? `${key}-${imgIndex}`,
+      const galleryImages = images.map((img, imgIndex) => ({
+        id: typeof img.id === "string" && img.id ? img.id : `${key}-${imgIndex}`,
         url: img.url,
-        caption: img.caption,
+        caption: typeof img.caption === "string" ? img.caption : undefined,
       }));
 
       return (
@@ -424,40 +473,43 @@ function renderBlock(block: ReviewBlock, index: number) {
               {title}
             </h3>
           )}
-          <StoryGallery images={galleryImages} withBackground={withBackground} />
+          <StoryGallery images={galleryImages} withBackground={Boolean(block.withBackground)} />
         </div>
       );
     }
 
     case "card": {
-      const b: any = block;
-      const title = b.title ?? "";
-      const body = b.body ?? b.text ?? "";
-      const rawLinkUrl = b.linkUrl ?? "";
+      const title = getString(block.title);
+      const body = getString(block.body ?? block.text ?? "");
+      const rawLinkUrl = getString(block.linkUrl);
       const linkUrl = rawLinkUrl ? normalizeUrl(rawLinkUrl) : "";
-      const linkLabel = b.linkLabel || "Learn more";
-      const variant: CardVariant = b.variant ?? "default";
-      const mediaType: CardMediaType = b.mediaType ?? "none";
-      const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
+      const linkLabel = getString(block.linkLabel, "Learn more");
+
+      const variant: CardVariant =
+        block.variant === "compact" || block.variant === "featured" ? block.variant : "default";
+
+      const mediaType: CardMediaType =
+        block.mediaType === "video" || block.mediaType === "imageGrid" ? block.mediaType : "none";
+
+      const cardWidth: CardWidth = block.cardWidth === "full" ? "full" : "narrow";
 
       const layout: CardLayout =
-        b.layout === "mediaBottom" ||
-        b.layout === "mediaLeft" ||
-        b.layout === "mediaRight"
-          ? b.layout
+        block.layout === "mediaBottom" ||
+        block.layout === "mediaLeft" ||
+        block.layout === "mediaRight"
+          ? block.layout
           : "mediaTop";
 
-      const videoUrl = b.videoUrl as string | undefined;
-      const embedUrl =
-        mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
+      const videoUrl = getOptionalString(block.videoUrl);
+      const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
 
-      const imageUrls: string[] = Array.isArray(b.imageUrls)
-        ? b.imageUrls.filter(Boolean)
+      const imageUrls: string[] = Array.isArray(block.imageUrls)
+        ? block.imageUrls.filter((u): u is string => typeof u === "string" && Boolean(u))
         : [];
-      const imageLayout: "row" | "grid" =
-        b.imageLayout === "grid" ? "grid" : "row";
 
-      if (!title && !body && !imageUrls.length && !embedUrl) return null;
+      const imageLayout: "row" | "grid" = block.imageLayout === "grid" ? "grid" : "row";
+
+      if (!title && !body && imageUrls.length === 0 && !embedUrl) return null;
 
       const media = embedUrl ? (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
@@ -470,13 +522,10 @@ function renderBlock(block: ReviewBlock, index: number) {
           />
         </div>
       ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
-        <div
-          className={
-            imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"
-          }
-        >
+        <div className={imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"}>
           {imageUrls.map((url, imgIndex) => {
             const modalId = `card-modal-${index}-${imgIndex}`;
+
             return (
               <div key={modalId} className="relative aspect-square w-full">
                 <input type="checkbox" id={modalId} className="peer hidden" />
@@ -495,10 +544,7 @@ function renderBlock(block: ReviewBlock, index: number) {
                 </label>
 
                 <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
-                  <label
-                    htmlFor={modalId}
-                    className="absolute inset-0 cursor-zoom-out"
-                  />
+                  <label htmlFor={modalId} className="absolute inset-0 cursor-zoom-out" />
                   <div className="relative z-50 max-w-4xl w-full">
                     <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
                       <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
@@ -521,11 +567,7 @@ function renderBlock(block: ReviewBlock, index: number) {
 
       const textSection = (
         <>
-          {title && (
-            <h3 className="text-sm font-semibold text-white mb-1 break-words">
-              {title}
-            </h3>
-          )}
+          {title && <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>}
           {body && (
             <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
               <div dangerouslySetInnerHTML={{ __html: body }} />
@@ -545,12 +587,11 @@ function renderBlock(block: ReviewBlock, index: number) {
         </>
       );
 
-      let inner;
+      let inner: ReactNode;
+
       if (layout === "mediaLeft" || layout === "mediaRight") {
         const floatClass =
-          layout === "mediaRight"
-            ? "float-right ml-4 mb-2 w-24 sm:w-32"
-            : "float-left mr-4 mb-2 w-24 sm:w-32";
+          layout === "mediaRight" ? "float-right ml-4 mb-2 w-24 sm:w-32" : "float-left mr-4 mb-2 w-24 sm:w-32";
 
         inner = (
           <div className='after:content-[""] after:block after:clear-both'>
@@ -560,19 +601,14 @@ function renderBlock(block: ReviewBlock, index: number) {
         );
       } else {
         inner = (
-          <div
-            className={`flex flex-col gap-3 ${
-              layout === "mediaBottom" ? "flex-col-reverse" : ""
-            }`}
-          >
+          <div className={`flex flex-col gap-3 ${layout === "mediaBottom" ? "flex-col-reverse" : ""}`}>
             {media && <div>{media}</div>}
             <div className="space-y-1">{textSection}</div>
           </div>
         );
       }
 
-      const widthClass =
-        cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
+      const widthClass = cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
 
       return (
         <div key={key} className={widthClass}>
@@ -582,9 +618,7 @@ function renderBlock(block: ReviewBlock, index: number) {
     }
 
     case "divider":
-      return (
-        <hr key={key} className="my-6 border-t border-white/10 rounded-full" />
-      );
+      return <hr key={key} className="my-6 border-t border-white/10 rounded-full" />;
 
     default:
       return null;
@@ -619,86 +653,85 @@ export default async function RatingDetailPage({ params }: PageProps) {
     .limit(6);
 
   const moreStories =
-    moreStoriesRaw?.map((row: any) => ({
-      id: row.id as string,
-      slug: (row.slug as string | null) ?? null,
-      title: row.title as string,
-      subtitle: (row.subtitle as string | null) ?? undefined,
-      img:
-        (row.image_url as string | null) &&
-        (row.image_url as string).trim() !== ""
-          ? (row.image_url as string)
-          : null,
+    (moreStoriesRaw as MoreStoryRow[] | null)?.map((row) => ({
+      id: row.id,
+      slug: row.slug ?? null,
+      title: row.title,
+      subtitle: row.subtitle ?? undefined,
+      img: row.image_url && row.image_url.trim() !== "" ? row.image_url : null,
     })) ?? [];
 
-  const allRatings = await adminGetRatings();
+  const allRatings = (await adminGetRatings()) as RatingSummary[];
   const sidebarRatings = allRatings.slice(1, 8);
 
-  const gameTitle = data.game_title as string;
+  const gameTitle = String(data.game_title ?? "");
 
-  const createdDate = data.created_at
-    ? new Date(data.created_at as string).toLocaleDateString("bg-BG")
-    : "";
+  const createdDate = data.created_at ? new Date(data.created_at).toLocaleDateString("bg-BG") : "";
 
-  const coverImage =
-    (data.image_url as string | null) &&
-    (data.image_url as string).trim() !== ""
-      ? (data.image_url as string)
-      : null;
+  const coverImage = data.image_url && data.image_url.trim() !== "" ? data.image_url : null;
 
-  const score = data.score as number;
-  const verdictLabel = (data.verdict_label as string | null) ?? "Ревю";
-  const summary = (data.summary as string | null) ?? null;
+  const score = typeof data.score === "number" ? data.score : 0;
+  const verdictLabel = data.verdict_label ?? "Ревю";
+  const summary = data.summary ?? null;
 
-  const developer = (data.developer as string | null) ?? null;
-  const publisher = (data.publisher as string | null) ?? null;
+  const developer = data.developer ?? null;
+  const publisher = data.publisher ?? null;
 
-  const releaseDateRaw = (data.release_date as string | null) ?? null;
+  const releaseDateRaw = data.release_date ?? null;
   const releaseDate = releaseDateRaw
     ? (() => {
         const d = new Date(releaseDateRaw);
-        return Number.isNaN(d.getTime())
-          ? releaseDateRaw
-          : d.toLocaleDateString("bg-BG");
+        return Number.isNaN(d.getTime()) ? releaseDateRaw : d.toLocaleDateString("bg-BG");
       })()
     : null;
 
-  const platformsRaw = Array.isArray(data.platforms)
-    ? (data.platforms as string[])
+  const platformsRaw: string[] = Array.isArray(data.platforms)
+    ? data.platforms.filter((p): p is string => typeof p === "string")
     : [];
   const platforms = filterPlatforms(platformsRaw);
 
-  const genres = Array.isArray(data.genres) ? (data.genres as string[]) : [];
+  const genres: string[] = Array.isArray(data.genres)
+    ? data.genres.filter((g): g is string => typeof g === "string")
+    : [];
 
-  const trailerEmbed = getYouTubeEmbedUrl(
-    (data.trailer_url as string | null) ?? undefined
-  );
+  const trailerEmbed = getYouTubeEmbedUrl(data.trailer_url ?? undefined);
 
-  const rawGallery = (data.gallery_images as any[] | null) ?? [];
-  const galleryImages = rawGallery
-    .filter((g) => g && g.url)
-    .map((g, idx) => ({
-      id: g.id ?? `g-${idx}`,
-      url: g.url as string,
-      caption: (g.caption as string | null) ?? undefined,
-    }));
+  // gallery_images can be unknown (json)
+  type GalleryImage = { id?: string; url: string; caption?: string };
 
-  const reviewerName = (data.reviewer_name as string | null) ?? null;
-  const reviewerAvatar =
-    (data.reviewer_avatar_url as string | null) || "/default.jpg";
+  const galleryUnknown = data.gallery_images as unknown;
+  const rawGallery: GalleryImage[] = Array.isArray(galleryUnknown)
+    ? galleryUnknown
+        .filter((g): g is GalleryImage => isRecord(g) && typeof g.url === "string" && Boolean(g.url))
+        .map((g) => ({
+          id: typeof g.id === "string" ? g.id : undefined,
+          url: g.url,
+          caption: typeof g.caption === "string" ? g.caption : undefined,
+        }))
+    : [];
+
+  const galleryImages = rawGallery.map((g, idx) => ({
+    id: g.id ?? `g-${idx}`,
+    url: g.url,
+    caption: g.caption,
+  }));
+
+  const reviewerName = data.reviewer_name ?? null;
+  const reviewerAvatar = data.reviewer_avatar_url || "/default.jpg";
 
   let blocks: ReviewBlock[] = [];
-  const rawBody = data.review_body as string | null;
+  const rawBody = data.review_body;
 
   if (rawBody && rawBody.trim()) {
     try {
-      const parsed = JSON.parse(rawBody);
+      const parsed: unknown = JSON.parse(rawBody);
       if (Array.isArray(parsed)) blocks = parsed as ReviewBlock[];
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
 
-  const { before: blocksBeforeMediaRaw, after: blocksAfterMedia, hasMarker } =
-    splitByMedia(blocks);
+  const { before: blocksBeforeMediaRaw, after: blocksAfterMedia, hasMarker } = splitByMedia(blocks);
 
   const shouldShowMedia = Boolean(trailerEmbed || galleryImages.length > 0);
 
@@ -708,7 +741,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
     const summaryCompare = normalizeText(trimTrailingEllipsis(summary));
     const first = blocksBeforeMediaRaw[0];
     if (first?.type === "paragraph") {
-      const firstText = normalizeText(stripHtml((first as any).text || ""));
+      const firstText = normalizeText(stripHtml(getString(first.text)));
       if (firstText && summaryCompare && firstText.startsWith(summaryCompare)) {
         blocksBeforeMedia = blocksBeforeMediaRaw.slice(1);
       }
@@ -729,9 +762,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
         </Link>
 
         {createdDate && (
-          <div className="hidden sm:block text-xs text-white/50">
-            Публикувано: {createdDate}
-          </div>
+          <div className="hidden sm:block text-xs text-white/50">Публикувано: {createdDate}</div>
         )}
       </div>
 
@@ -760,9 +791,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
               <div className="flex-1 flex flex-col justify-start gap-4 min-w-0 pt-1">
                 <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-wide text-white/60">
-                    {createdDate}
-                  </p>
+                  <p className="text-[11px] uppercase tracking-wide text-white/60">{createdDate}</p>
 
                   <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight break-words">
                     {gameTitle}
@@ -771,20 +800,17 @@ export default async function RatingDetailPage({ params }: PageProps) {
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-white/70">
                     {developer && (
                       <span className="break-all">
-                        <span className="text-white/50">Разработчик:</span>{" "}
-                        {developer}
+                        <span className="text-white/50">Разработчик:</span> {developer}
                       </span>
                     )}
                     {releaseDate && (
                       <span className="break-all">
-                        <span className="text-white/50">Премиера:</span>{" "}
-                        {releaseDate}
+                        <span className="text-white/50">Премиера:</span> {releaseDate}
                       </span>
                     )}
                     {publisher && (
                       <span className="break-all">
-                        <span className="text-white/50">Издател:</span>{" "}
-                        {publisher}
+                        <span className="text-white/50">Издател:</span> {publisher}
                       </span>
                     )}
                   </div>
@@ -796,25 +822,19 @@ export default async function RatingDetailPage({ params }: PageProps) {
                   )}
                 </div>
 
-                {/* ✅ SCORE + GENRES (stacked, no mt hacks, no verdict label) */}
+                {/* SCORE + GENRES */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-14 w-14 items-center justify-center rounded-2xl text-base sm:text-[15px] font-extrabold leading-none shadow-[0_0_30px_rgba(0,0,0,0.35)]"
-                      style={{
-                        background: scoreBoxStyle.background,
-                        color: scoreBoxStyle.color,
-                      }}
+                      style={{ background: scoreBoxStyle.background, color: scoreBoxStyle.color }}
                       title="Pokko Score"
                     >
                       {tierScore != null ? `${tierScore}/10` : "--/10"}
                     </div>
 
                     <div className="text-[12px] text-white/70">
-                      <p className="text-[10px] uppercase tracking-wide">
-                        Pokko Score
-                      </p>
-                      {/* ✅ removed verdict label line here */}
+                      <p className="text-[10px] uppercase tracking-wide">Pokko Score</p>
                     </div>
                   </div>
 
@@ -824,47 +844,31 @@ export default async function RatingDetailPage({ params }: PageProps) {
             </div>
 
             <div className="pt-3 border-t border-white/10">
-              <h2 className="text-sm font-semibold mb-2">
-                Колко време се играе
-              </h2>
+              <h2 className="text-sm font-semibold mb-2">Колко време се играе</h2>
 
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-center text-[11px]">
                 <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                  <p className="text-[10px] uppercase text-white/50">
-                    Основна история
-                  </p>
+                  <p className="text-[10px] uppercase text-white/50">Основна история</p>
                   <p className="mt-1 text-sm font-semibold">
                     {data.hours_main != null ? `${data.hours_main} ч.` : "--"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                  <p className="text-[10px] uppercase text-white/50">
-                    История + странични
-                  </p>
+                  <p className="text-[10px] uppercase text-white/50">История + странични</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {data.hours_main_plus != null
-                      ? `${data.hours_main_plus} ч.`
-                      : "--"}
+                    {data.hours_main_plus != null ? `${data.hours_main_plus} ч.` : "--"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                  <p className="text-[10px] uppercase text-white/50">
-                    Завършване на 100%
-                  </p>
+                  <p className="text-[10px] uppercase text-white/50">Завършване на 100%</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {data.hours_completionist != null
-                      ? `${data.hours_completionist} ч.`
-                      : "--"}
+                    {data.hours_completionist != null ? `${data.hours_completionist} ч.` : "--"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                  <p className="text-[10px] uppercase text-white/50">
-                    Всички стилове
-                  </p>
+                  <p className="text-[10px] uppercase text-white/50">Всички стилове</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {data.hours_all_styles != null
-                      ? `${data.hours_all_styles} ч.`
-                      : "--"}
+                    {data.hours_all_styles != null ? `${data.hours_all_styles} ч.` : "--"}
                   </p>
                 </div>
               </div>
@@ -881,9 +885,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
           )}
 
           {hasMarker && blocksBeforeMedia.length > 0 && (
-            <section className="space-y-3">
-              {blocksBeforeMedia.map((b, idx) => renderBlock(b, idx))}
-            </section>
+            <section className="space-y-3">{blocksBeforeMedia.map((b, idx) => renderBlock(b, idx))}</section>
           )}
 
           {shouldShowMedia && (
@@ -900,18 +902,14 @@ export default async function RatingDetailPage({ params }: PageProps) {
                 </div>
               )}
 
-              {galleryImages.length > 0 && (
-                <StoryGallery images={galleryImages} withBackground={false} />
-              )}
+              {galleryImages.length > 0 && <StoryGallery images={galleryImages} withBackground={false} />}
             </div>
           )}
 
           {blocksAfterMedia.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-sm font-semibold">{verdictLabel || "Ревю"}</h2>
-              <section className="space-y-3">
-                {blocksAfterMedia.map((b, idx) => renderBlock(b, idx))}
-              </section>
+              <section className="space-y-3">{blocksAfterMedia.map((b, idx) => renderBlock(b, idx))}</section>
             </div>
           )}
 
@@ -919,24 +917,12 @@ export default async function RatingDetailPage({ params }: PageProps) {
             <div className="rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
               <div className="flex items-center gap-3">
                 <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/40 bg-black flex-shrink-0">
-                  <Image
-                    src={reviewerAvatar}
-                    alt={reviewerName || "Автор"}
-                    fill
-                    sizes="40px"
-                    className="object-cover"
-                  />
+                  <Image src={reviewerAvatar} alt={reviewerName || "Автор"} fill sizes="40px" className="object-cover" />
                 </div>
 
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-wide text-white/60">
-                    Редактирано от
-                  </p>
-                  {reviewerName && (
-                    <p className="text-sm font-semibold break-words">
-                      {reviewerName}
-                    </p>
-                  )}
+                  <p className="text-[10px] uppercase tracking-wide text-white/60">Редактирано от</p>
+                  {reviewerName && <p className="text-sm font-semibold break-words">{reviewerName}</p>}
                 </div>
               </div>
             </div>
@@ -958,27 +944,17 @@ export default async function RatingDetailPage({ params }: PageProps) {
                     className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                   >
                     <div className="relative w-16 h-16 flex-shrink-0">
-                      <Image
-                        src={r.img}
-                        alt={r.game_title}
-                        fill
-                        sizes="64px"
-                        className="object-cover"
-                      />
+                      <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                     </div>
                     <div className="flex-1 min-w-0 py-2 pr-3">
-                      <p className="text-xs font-semibold line-clamp-2">
-                        {r.game_title}
-                      </p>
+                      <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
                       {r.subtitle && (
-                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                          {r.subtitle}
-                        </p>
+                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>
                       )}
                     </div>
                     <div className="px-2 pr-3">
                       <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
-                        {r.score.toFixed(1)}
+                        {Number.isFinite(r.score) ? r.score.toFixed(1) : "0.0"}
                       </span>
                     </div>
                   </Link>
@@ -989,20 +965,14 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
           {moreStories.length > 0 && (
             <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                Още истории
-              </h2>
+              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Още истории</h2>
               <div className="space-y-3">
                 {moreStories.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/news/${s.slug || s.id}`}
-                    className="flex gap-3 group"
-                  >
+                  <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                     <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                       {s.img ? (
                         <Image
-                          src={s.img as string}
+                          src={s.img}
                           alt={s.title}
                           fill
                           sizes="80px"
@@ -1015,13 +985,9 @@ export default async function RatingDetailPage({ params }: PageProps) {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                        {s.title}
-                      </p>
+                      <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
                       {s.subtitle && (
-                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                          {s.subtitle}
-                        </p>
+                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>
                       )}
                     </div>
                   </Link>
@@ -1036,9 +1002,7 @@ export default async function RatingDetailPage({ params }: PageProps) {
       <div className="mt-8 space-y-6 lg:hidden">
         {sidebarRatings.length > 0 && (
           <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-              Последни ревюта
-            </h2>
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Последни ревюта</h2>
             <div className="space-y-3">
               {sidebarRatings.map((r) => (
                 <Link
@@ -1047,27 +1011,15 @@ export default async function RatingDetailPage({ params }: PageProps) {
                   className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
                 >
                   <div className="relative w-16 h-16 flex-shrink-0">
-                    <Image
-                      src={r.img}
-                      alt={r.game_title}
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
+                    <Image src={r.img} alt={r.game_title} fill sizes="64px" className="object-cover" />
                   </div>
                   <div className="flex-1 min-w-0 py-2 pr-3">
-                    <p className="text-xs font-semibold line-clamp-2">
-                      {r.game_title}
-                    </p>
-                    {r.subtitle && (
-                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                        {r.subtitle}
-                      </p>
-                    )}
+                    <p className="text-xs font-semibold line-clamp-2">{r.game_title}</p>
+                    {r.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{r.subtitle}</p>}
                   </div>
                   <div className="px-2 pr-3">
                     <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
-                      {r.score.toFixed(1)}
+                      {Number.isFinite(r.score) ? r.score.toFixed(1) : "0.0"}
                     </span>
                   </div>
                 </Link>
@@ -1078,20 +1030,14 @@ export default async function RatingDetailPage({ params }: PageProps) {
 
         {moreStories.length > 0 && (
           <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-              Още истории
-            </h2>
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">Още истории</h2>
             <div className="space-y-3">
               {moreStories.map((s) => (
-                <Link
-                  key={s.id}
-                  href={`/news/${s.slug || s.id}`}
-                  className="flex gap-3 group"
-                >
+                <Link key={s.id} href={`/news/${s.slug || s.id}`} className="flex gap-3 group">
                   <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
                     {s.img ? (
                       <Image
-                        src={s.img as string}
+                        src={s.img}
                         alt={s.title}
                         fill
                         sizes="80px"
@@ -1104,14 +1050,8 @@ export default async function RatingDetailPage({ params }: PageProps) {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                      {s.title}
-                    </p>
-                    {s.subtitle && (
-                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                        {s.subtitle}
-                      </p>
-                    )}
+                    <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">{s.title}</p>
+                    {s.subtitle && <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">{s.subtitle}</p>}
                   </div>
                 </Link>
               ))}

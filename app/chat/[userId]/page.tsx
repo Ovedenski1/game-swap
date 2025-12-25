@@ -1,10 +1,10 @@
 // app/chat/[userId]/page.tsx
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { getUserChats } from "@/lib/actions/matches";
-import { UserProfile } from "@/app/profile/page";
+import type { UserProfile } from "@/components/ProfilePage";
 import ChatHeader from "@/components/ChatHeader";
 import StreamChatInterface from "@/components/StreamChatInterface";
 import { useAuth } from "@/contexts/auth-context";
@@ -17,13 +17,20 @@ interface ChatData {
   unreadCount: number;
 }
 
+type RawChatSummary = {
+  matchId: string;
+  otherUser: UserProfile;
+  lastMessage?: string | null;
+  lastMessageTime?: string | null;
+  unreadCount?: number | null;
+};
+
 export default function ChatConversationPage({
   params,
 }: {
-  params: Promise<{ userId: string }>;
+  params: { userId: string };
 }) {
-  const { userId } = use(params);
-  const matchIdFromUrl = userId;
+  const matchIdFromUrl = params.userId;
 
   const { user: authUser } = useAuth();
 
@@ -31,19 +38,18 @@ export default function ChatConversationPage({
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<ChatData | null>(null);
 
-  function normalizeChats(raw: any[]): ChatData[] {
+  function normalizeChats(raw: RawChatSummary[]): ChatData[] {
     const chatData: ChatData[] = raw.map((item) => ({
       id: item.matchId,
       user: item.otherUser,
       lastMessage: item.lastMessage ?? "Start your conversation!",
-      lastMessageTime: item.lastMessageTime || new Date().toISOString(),
+      lastMessageTime: item.lastMessageTime ?? new Date().toISOString(),
       unreadCount: item.unreadCount ?? 0,
     }));
 
     chatData.sort(
       (a, b) =>
-        new Date(b.lastMessageTime).getTime() -
-        new Date(a.lastMessageTime).getTime()
+        new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
 
     return chatData;
@@ -54,7 +60,7 @@ export default function ChatConversationPage({
     const now = new Date();
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
 
-    if (isNaN(diffInHours)) return "";
+    if (Number.isNaN(diffInHours)) return "";
     if (diffInHours < 1) return "Just now";
     if (diffInHours < 24) {
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -68,20 +74,18 @@ export default function ChatConversationPage({
 
     async function loadChats() {
       try {
-        const chatSummaries = await getUserChats();
+        const chatSummaries = (await getUserChats()) as RawChatSummary[];
         if (cancelled) return;
 
-        const normalized = normalizeChats(chatSummaries);
+        const normalized = normalizeChats(Array.isArray(chatSummaries) ? chatSummaries : []);
         setChats(normalized);
 
         const found =
-          normalized.find((c) => c.id === matchIdFromUrl) ||
-          normalized[0] ||
-          null;
+          normalized.find((c) => c.id === matchIdFromUrl) || normalized[0] || null;
 
         setSelectedChat(found);
-      } catch (error) {
-        console.error(error);
+      } catch (err: unknown) {
+        console.error(err);
         if (!cancelled) setChats([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -93,8 +97,7 @@ export default function ChatConversationPage({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [matchIdFromUrl]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -103,28 +106,29 @@ export default function ChatConversationPage({
 
     async function refreshChats() {
       try {
-        const chatSummaries = await getUserChats();
+        const chatSummaries = (await getUserChats()) as RawChatSummary[];
         if (cancelled) return;
 
-        const normalized = normalizeChats(chatSummaries);
+        const normalized = normalizeChats(Array.isArray(chatSummaries) ? chatSummaries : []);
         setChats(normalized);
 
-        if (selectedChat) {
-          const fresh = normalized.find((c) => c.id === selectedChat.id) || null;
-          setSelectedChat(fresh);
-        }
-      } catch (err) {
+        // keep selected chat in sync WITHOUT depending on `selectedChat`
+        setSelectedChat((prev) => {
+          if (!prev) return prev;
+          return normalized.find((c) => c.id === prev.id) ?? prev;
+        });
+      } catch (err: unknown) {
         console.error("Failed to refresh chats:", err);
       }
     }
 
-    const id = setInterval(refreshChats, 5000);
+    const id = window.setInterval(refreshChats, 5000);
 
     return () => {
       cancelled = true;
-      clearInterval(id);
+      window.clearInterval(id);
     };
-  }, [authUser, selectedChat?.id]);
+  }, [authUser]);
 
   function handleLastMessageUpdate({
     matchId,
@@ -146,8 +150,7 @@ export default function ChatConversationPage({
 
       updated.sort(
         (a, b) =>
-          new Date(b.lastMessageTime).getTime() -
-          new Date(a.lastMessageTime).getTime()
+          new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       );
 
       return updated;
@@ -172,27 +175,22 @@ export default function ChatConversationPage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ matchId }),
         });
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Failed to mark chat as read:", err);
       }
     }
 
     markRead();
 
-    setChats((prev) =>
-      prev.map((c) => (c.id === matchId ? { ...c, unreadCount: 0 } : c))
-    );
+    setChats((prev) => prev.map((c) => (c.id === matchId ? { ...c, unreadCount: 0 } : c)));
   }, [selectedChat]);
 
   return (
     <div className="max-w-[1500px] mx-auto px-3 sm:px-6 lg:px-4 py-6 sm:py-8">
-      {/* ✅ keep the internal chat sizing EXACT (min-h-0 is critical) */}
       <div className="rounded-2xl border border-border bg-surface/40 shadow-[0_20px_60px_rgba(0,0,0,0.35)] overflow-hidden">
         <div className="p-4 sm:p-6 lg:p-8">
-          {/* ✅ this wrapper must keep min-h-0 / flex-1 to not break StreamChatInterface */}
           <div className="flex w-full min-h-[70vh] min-h-0 rounded-none md:rounded-2xl bg-background shadow-lg overflow-hidden">
             <aside className="hidden md:flex w-80 border-r border-border bg-surface-elevated flex-col">
-
               <div className="px-4 py-3 border-b border-gray-800">
                 <h1 className="text-lg font-semibold text-white">Messages</h1>
                 <p className="text-xs text-gray-400">
@@ -219,17 +217,15 @@ export default function ChatConversationPage({
                         onClick={() => {
                           setSelectedChat({ ...chat, unreadCount: 0 });
                           setChats((prev) =>
-                            prev.map((c) =>
-                              c.id === chat.id ? { ...c, unreadCount: 0 } : c
-                            )
+                            prev.map((c) => (c.id === chat.id ? { ...c, unreadCount: 0 } : c))
                           );
                         }}
                         className={`w-full flex items-center px-4 py-3 text-left border-b border-gray-800/60 transition ${
                           isUnread
                             ? "bg-[#2b1120] hover:bg-[#3b162b]"
                             : isActive
-                            ? "bg-gray-800/60 hover:bg-gray-800/80"
-                            : "hover:bg-gray-800/40"
+                              ? "bg-gray-800/60 hover:bg-gray-800/80"
+                              : "hover:bg-gray-800/40"
                         }`}
                       >
                         <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
@@ -253,9 +249,7 @@ export default function ChatConversationPage({
 
                           <p
                             className={`text-xs truncate ${
-                              isUnread
-                                ? "text-pink-200 font-semibold"
-                                : "text-gray-400"
+                              isUnread ? "text-pink-200 font-semibold" : "text-gray-400"
                             }`}
                           >
                             {isUnread ? "New message" : chat.lastMessage}
@@ -267,7 +261,6 @@ export default function ChatConversationPage({
               </div>
             </aside>
 
-            {/* ✅ keep these exact bg classes (StreamChat + header rely on it visually) */}
             <section className="flex-1 flex flex-col min-h-0 bg-background">
               {!selectedChat ? (
                 <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">

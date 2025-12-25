@@ -190,6 +190,12 @@ export type StoryBlock =
   | EmbedBlock
   | GalleryBlock;
 
+/**
+ * In practice, you may load contentBlocks from DB where `id` might be missing.
+ * This input type lets us normalize safely without using `any`.
+ */
+type StoryBlockInput = StoryBlock | (Omit<StoryBlock, "id"> & { id?: string });
+
 /* authors from API */
 type AuthorOption = {
   id: string;
@@ -198,9 +204,46 @@ type AuthorOption = {
   avatar_url: string | null;
 };
 
+type ApiAuthor = {
+  id: string | number;
+  name?: string | null;
+  full_name?: string | null;
+  role?: string | null;
+  authorRole?: string | null;
+  avatar_url?: string | null;
+  avatarUrl?: string | null;
+};
+
+type AuthorsApiResponse = {
+  authors?: ApiAuthor[];
+};
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function normalizeStoryBlock(b: StoryBlockInput): StoryBlock {
+  const maybeId = isRecord(b) ? b.id : undefined;
+  const id = typeof maybeId === "string" && maybeId.trim() ? maybeId : nanoid();
+
+  // `b` might not include `id`, so we create a new object with `id`.
+  return {
+    ...(b as Omit<StoryBlock, "id">),
+    id,
+  } as StoryBlock;
+}
+
+function isAuthorsApiResponse(v: unknown): v is AuthorsApiResponse {
+  if (!isRecord(v)) return false;
+  const authors = v.authors;
+  if (authors === undefined) return true;
+  if (!Array.isArray(authors)) return false;
+  return authors.every((a) => isRecord(a) && ("id" in a));
+}
 
 function createBlock(type: StoryBlock["type"]): StoryBlock {
   switch (type) {
@@ -282,11 +325,7 @@ function blocksToBody(blocks: StoryBlock[]): string {
     .join("\n\n");
 }
 
-function updateImageUrls(
-  block: CardBlock,
-  index: number,
-  url: string,
-): string[] {
+function updateImageUrls(block: CardBlock, index: number, url: string): string[] {
   const current = block.imageUrls ?? [];
   const copy = [...current];
   copy[index] = url;
@@ -345,9 +384,7 @@ function normalizeEmbedInput(raw: string): string {
   if (trimmed.includes("twitter-tweet")) {
     const matches = [...trimmed.matchAll(/<a[^>]+href="([^"]+)"/gi)];
     const lastHref = matches.length ? matches[matches.length - 1][1] : null;
-    if (lastHref) {
-      return lastHref;
-    }
+    if (lastHref) return lastHref;
   }
 
   // 2) Generic iframe
@@ -398,10 +435,7 @@ function getOgTitle(title: string, metaTitle: string): string {
   return t || "Example article title for social previews";
 }
 
-function getOgDescription(
-  subtitle: string,
-  metaDescription: string,
-): string {
+function getOgDescription(subtitle: string, metaDescription: string): string {
   const d = metaDescription.trim() || subtitle.trim();
   return (
     d ||
@@ -604,9 +638,8 @@ type StoryBuilderProps = {
   initialMetaTitle?: string | null;
   initialMetaDescription?: string | null;
 
-  initialBlocks?: StoryBlock[] | null;
+  initialBlocks?: StoryBlockInput[] | null;
   initialIsSpoiler?: boolean | null;
-  
 };
 
 /* ------------------------------------------------------------------ */
@@ -639,7 +672,7 @@ export default function StoryBuilderClient({
   const [authorAvatarUrl, setAuthorAvatarUrl] = useState(
     initialAuthorAvatarUrl ?? "",
   );
-    // ⭐ ADD THIS NEW STATE SOMEWHERE HERE
+
   const [isSpoiler, setIsSpoiler] = useState(initialIsSpoiler ?? false);
   const [reviewedBy] = useState(initialReviewedBy ?? "");
 
@@ -661,17 +694,11 @@ export default function StoryBuilderClient({
   // NEW: social preview modal
   const [isSocialPreviewOpen, setIsSocialPreviewOpen] = useState(false);
 
-  const [blocks, setBlocks] = useState<StoryBlock[]>(
-    initialBlocks && initialBlocks.length
-      ? initialBlocks.map(
-          (b) =>
-            ({
-              ...b,
-              id: (b as any).id ?? nanoid(),
-            }) as StoryBlock,
-        )
-      : [createBlock("paragraph")],
-  );
+  const [blocks, setBlocks] = useState<StoryBlock[]>(() => {
+    const list = initialBlocks ?? [];
+    const normalized = list.map(normalizeStoryBlock);
+    return normalized.length ? normalized : [createBlock("paragraph")];
+  });
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -699,17 +726,19 @@ export default function StoryBuilderClient({
         const res = await fetch("/api/admin/authors");
         if (!res.ok) return;
 
-        const json = await res.json();
-        if (Array.isArray(json.authors)) {
-          const normalized: AuthorOption[] = json.authors.map((a: any) => ({
-            id: String(a.id),
-            name: a.name ?? a.full_name ?? "",
-            role: a.role ?? a.authorRole ?? null,
-            avatar_url: a.avatar_url ?? a.avatarUrl ?? null,
-          }));
-          setAuthorOptions(normalized);
-        }
-      } catch (err) {
+        const json: unknown = await res.json();
+        if (!isAuthorsApiResponse(json) || !Array.isArray(json.authors)) return;
+
+        const normalized: AuthorOption[] = json.authors.map((a) => {
+          const id = String(a.id);
+          const name = (a.name ?? a.full_name ?? "") || "";
+          const role = (a.role ?? a.authorRole ?? null) ?? null;
+          const avatar_url = (a.avatar_url ?? a.avatarUrl ?? null) ?? null;
+          return { id, name, role, avatar_url };
+        });
+
+        setAuthorOptions(normalized);
+      } catch (err: unknown) {
         console.error("Failed to load authors", err);
       }
     }
@@ -863,9 +892,17 @@ export default function StoryBuilderClient({
           setAuthorAvatarUrl("");
           setSelectedAuthorId("custom");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setError(err?.message || "Failed to save story.");
+
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : "Failed to save story.";
+
+        setError(message);
       }
     });
   }
@@ -929,7 +966,7 @@ export default function StoryBuilderClient({
           <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
             <div
               dangerouslySetInnerHTML={{
-                __html: body!,
+                __html: body,
               }}
             />
           </div>
@@ -949,7 +986,7 @@ export default function StoryBuilderClient({
       </>
     );
 
-    let inner;
+    let inner: React.ReactNode;
 
     if (layout === "mediaLeft" || layout === "mediaRight") {
       const floatClass =
@@ -1067,8 +1104,7 @@ export default function StoryBuilderClient({
               <div
                 className="whitespace-pre-wrap break-all"
                 dangerouslySetInnerHTML={{
-                  __html:
-                    block.text || "Add a highlighted quote or pull-quote…",
+                  __html: block.text || "Add a highlighted quote or pull-quote…",
                 }}
               />
             </blockquote>
@@ -1093,8 +1129,7 @@ export default function StoryBuilderClient({
           previewWidth != null ? Math.max(previewWidth - paddingX, 0) : null;
 
         const scale = 0.9;
-        const baseWidthPx =
-          available != null ? (available * 0.8) / scale : 640;
+        const baseWidthPx = available != null ? (available * 0.8) / scale : 640;
 
         return (
           <div className="space-y-1">
@@ -1179,9 +1214,7 @@ export default function StoryBuilderClient({
               Image gallery
             </p>
             {block.title && (
-              <h3 className="text-xl font-semibold text-white">
-                {block.title}
-              </h3>
+              <h3 className="text-xl font-semibold text-white">{block.title}</h3>
             )}
             <StoryGallery
               images={galleryImages}
@@ -1316,9 +1349,7 @@ export default function StoryBuilderClient({
         {block.type === "quote" && (
           <RichTextEditor
             value={block.text}
-            onChange={(html) =>
-              updateBlock<QuoteBlock>(block.id, { text: html })
-            }
+            onChange={(html) => updateBlock<QuoteBlock>(block.id, { text: html })}
             placeholder="Pull-quote…"
           />
         )}
@@ -1589,9 +1620,7 @@ export default function StoryBuilderClient({
 
             <RichTextEditor
               value={block.body}
-              onChange={(html) =>
-                updateBlock<CardBlock>(block.id, { body: html })
-              }
+              onChange={(html) => updateBlock<CardBlock>(block.id, { body: html })}
               placeholder="Short text…"
             />
 
@@ -1651,10 +1680,7 @@ export default function StoryBuilderClient({
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-3 py-6 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <Link
-              href="/admin"
-              className="text-xs text-white/60 hover:text-white"
-            >
+            <Link href="/admin" className="text-xs text-white/60 hover:text-white">
               ← Back to admin
             </Link>
             <h1 className="mt-2 text-2xl font-bold">
@@ -1676,8 +1702,8 @@ export default function StoryBuilderClient({
                 ? "Saving changes…"
                 : "Saving…"
               : mode === "edit"
-              ? "Save changes"
-              : "Save story"}
+                ? "Save changes"
+                : "Save story"}
           </button>
         </div>
 
@@ -1718,15 +1744,16 @@ export default function StoryBuilderClient({
                 placeholder="Short summary shown on cards…"
               />
             </div>
+
             {/* ⭐ SPOILER CHECKBOX */}
-<div className="flex items-center gap-2 text-sm">
-  <input
-    type="checkbox"
-    checked={isSpoiler}
-    onChange={(e) => setIsSpoiler(e.target.checked)}
-  />
-  <span className="text-white/80">This article contains spoilers</span>
-</div>
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isSpoiler}
+                onChange={(e) => setIsSpoiler(e.target.checked)}
+              />
+              <span className="text-white/80">This article contains spoilers</span>
+            </div>
 
             {/* NEW: Author section */}
             <div className="pt-3 border-t border-white/10 space-y-3">
@@ -1738,9 +1765,7 @@ export default function StoryBuilderClient({
                 {/* Left: dropdown + text fields */}
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] text-white/60">
-                      Choose author
-                    </label>
+                    <label className="text-[11px] text-white/60">Choose author</label>
                     <select
                       className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                       value={selectedAuthorId}
@@ -1756,9 +1781,7 @@ export default function StoryBuilderClient({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[11px] text-white/60">
-                      Author name
-                    </label>
+                    <label className="text-[11px] text-white/60">Author name</label>
                     <input
                       className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                       value={authorName}
@@ -1771,9 +1794,7 @@ export default function StoryBuilderClient({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[11px] text-white/60">
-                      Author role
-                    </label>
+                    <label className="text-[11px] text-white/60">Author role</label>
                     <input
                       className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                       value={authorRole}
@@ -1837,8 +1858,7 @@ export default function StoryBuilderClient({
                         placeholder="auto-generated-from-title"
                       />
                       <p className="text-[10px] text-white/40">
-                        e.g.{" "}
-                        <span className="italic">best-indie-rpgs-2025</span>
+                        e.g. <span className="italic">best-indie-rpgs-2025</span>
                       </p>
                     </div>
 
@@ -1942,9 +1962,7 @@ export default function StoryBuilderClient({
                     {title || "Story title"}
                   </h1>
                   {subtitle && (
-                    <p className="text-sm text-white/80 break-all">
-                      {subtitle}
-                    </p>
+                    <p className="text-sm text-white/80 break-all">{subtitle}</p>
                   )}
                 </div>
               </div>
@@ -1953,11 +1971,7 @@ export default function StoryBuilderClient({
                 {/* article blocks */}
                 {blocks.map((b, idx) => {
                   const marginClass =
-                    idx === 0
-                      ? ""
-                      : b.type === "embed"
-                      ? "mt-4"
-                      : "mt-6";
+                    idx === 0 ? "" : b.type === "embed" ? "mt-4" : "mt-6";
 
                   return (
                     <div key={b.id} className={marginClass}>
@@ -1967,10 +1981,7 @@ export default function StoryBuilderClient({
                 })}
 
                 {/* author card at bottom */}
-                {(authorName ||
-                  authorRole ||
-                  authorAvatarUrl ||
-                  reviewedBy) && (
+                {(authorName || authorRole || authorAvatarUrl || reviewedBy) && (
                   <div className="mt-6 rounded-2xl border border-white/15 bg-black/40 p-4 flex items-center gap-3">
                     <div className="relative h-12 w-12 rounded-full overflow-hidden border border-white/40 bg-black/60 flex-shrink-0">
                       {authorAvatarUrl ? (

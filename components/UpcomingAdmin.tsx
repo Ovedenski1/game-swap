@@ -47,6 +47,12 @@ function emptyForm(month: number): FormState {
   };
 }
 
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return "Something went wrong.";
+}
+
 export default function UpcomingAdmin({
   initialYear,
   initialItems,
@@ -100,8 +106,8 @@ export default function UpcomingAdmin({
     try {
       const data = await adminGetUpcomingGames(nextYear);
       setItems(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load upcoming games.");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e) || "Failed to load upcoming games.");
     } finally {
       setLoading(false);
     }
@@ -156,7 +162,9 @@ export default function UpcomingAdmin({
       let day: number | null = null;
       if (month !== 13 && form.day.trim() !== "") {
         const n = Number(form.day);
-        if (!Number.isFinite(n) || n < 1 || n > 31) throw new Error("Day must be 1..31 (or empty).");
+        if (!Number.isFinite(n) || n < 1 || n > 31) {
+          throw new Error("Day must be 1..31 (or empty).");
+        }
         day = n;
       }
 
@@ -169,17 +177,18 @@ export default function UpcomingAdmin({
         studio: form.studio.trim() || null,
         platforms: form.platforms.length ? form.platforms : null,
 
-        // removed from UI:
+        // keep backend contract happy (no `as any`)
+        link_url: null,
         details_html: null,
         sort_order: 0,
-      } as any);
+      });
 
       await refresh(year);
 
       // if it was "create" — keep editor open and clear fields
       if (!form.id) setForm((f) => ({ ...emptyForm(f.month) }));
-    } catch (e: any) {
-      setErr(e?.message || "Failed to save.");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e) || "Failed to save.");
     } finally {
       setSaving(false);
     }
@@ -192,8 +201,8 @@ export default function UpcomingAdmin({
       await adminDeleteUpcomingGame(id);
       await refresh(year);
       if (form.id === id) setForm(emptyForm(form.month));
-    } catch (e: any) {
-      setErr(e?.message || "Failed to delete.");
+    } catch (e: unknown) {
+      setErr(getErrorMessage(e) || "Failed to delete.");
     }
   }
 
@@ -249,7 +258,6 @@ export default function UpcomingAdmin({
         </button>
       </div>
 
-      {/* ✅ FIX HERE: items-start */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
         {MONTHS.map((m) => {
           const list = grouped.get(m.key) ?? [];
@@ -276,7 +284,6 @@ export default function UpcomingAdmin({
               </div>
 
               <div className="px-4 py-3">
-                {/* LIST */}
                 {list.length === 0 ? (
                   <div className="text-sm text-white/60">Nothing added.</div>
                 ) : (
@@ -315,7 +322,6 @@ export default function UpcomingAdmin({
                   </div>
                 )}
 
-                {/* INLINE EDITOR */}
                 {isOpen ? (
                   <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3 space-y-3">
                     <div className="text-sm font-semibold">
@@ -335,7 +341,9 @@ export default function UpcomingAdmin({
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-xs text-white/60">Day {m.key === 13 ? "(disabled for TBA)" : ""}</label>
+                          <label className="text-xs text-white/60">
+                            Day {m.key === 13 ? "(disabled for TBA)" : ""}
+                          </label>
                           <input
                             disabled={m.key === 13}
                             className="w-full rounded-md border border-white/20 bg-black/40 px-3 py-2 text-sm disabled:opacity-50"

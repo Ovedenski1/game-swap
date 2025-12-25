@@ -10,6 +10,34 @@ export type UserVoteRow = {
   user_id: string;
 };
 
+/* =========================================================================
+ * Helpers (no `any`, stable runtime)
+ * =======================================================================*/
+
+type Row = Record<string, unknown>;
+
+function asRow(v: unknown): Row {
+  return typeof v === "object" && v !== null ? (v as Row) : {};
+}
+
+function toStringValue(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : v == null ? fallback : String(v);
+}
+
+function toNullableString(v: unknown): string | null {
+  return v == null ? null : typeof v === "string" ? v : String(v);
+}
+
+function toNumberValue(v: unknown, fallback = 0): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 /* =============================
    Public reads (guests allowed)
 ============================= */
@@ -20,7 +48,7 @@ export async function getPublishedPolls(): Promise<PollListItem[]> {
   const { data, error } = await supabase
     .from("polls")
     .select(
-      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at, created_at"
+      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at, created_at",
     )
     .neq("status", "draft")
     .order("created_at", { ascending: false });
@@ -30,18 +58,22 @@ export async function getPublishedPolls(): Promise<PollListItem[]> {
     return [];
   }
 
-  return (data || []).map((p: any) => ({
-    id: String(p.id),
-    slug: String(p.slug),
-    title: p.title ?? "",
-    description: p.description ?? null,
-    hero_image_url: p.hero_image_url ?? null,
-    card_image_url: p.card_image_url ?? null,
-    status: p.status,
-    starts_at: p.starts_at ?? null,
-    ends_at: p.ends_at ?? null,
-    created_at: p.created_at ?? "",
-  }));
+  return ((data as unknown[] | null | undefined) ?? []).map((pInput) => {
+    const p = asRow(pInput);
+
+    return {
+      id: toStringValue(p.id),
+      slug: toStringValue(p.slug),
+      title: toStringValue(p.title, ""),
+      description: toNullableString(p.description),
+      hero_image_url: toNullableString(p.hero_image_url),
+      card_image_url: toNullableString(p.card_image_url),
+      status: p.status as PollListItem["status"],
+      starts_at: toNullableString(p.starts_at),
+      ends_at: toNullableString(p.ends_at),
+      created_at: toStringValue(p.created_at, ""),
+    };
+  });
 }
 
 export async function getPollBySlug(slug: string): Promise<PollDetail | null> {
@@ -50,7 +82,7 @@ export async function getPollBySlug(slug: string): Promise<PollDetail | null> {
   const { data: poll, error: pollErr } = await supabase
     .from("polls")
     .select(
-      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at, created_at"
+      "id, slug, title, description, hero_image_url, card_image_url, status, starts_at, ends_at, created_at",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -60,10 +92,12 @@ export async function getPollBySlug(slug: string): Promise<PollDetail | null> {
     return null;
   }
 
+  const pollRow = asRow(poll);
+
   const { data: questions, error: qErr } = await supabase
     .from("poll_questions")
     .select("id, poll_id, prompt, sort_order")
-    .eq("poll_id", poll.id)
+    .eq("poll_id", toStringValue(pollRow.id))
     .order("sort_order", { ascending: true });
 
   if (qErr) {
@@ -74,7 +108,7 @@ export async function getPollBySlug(slug: string): Promise<PollDetail | null> {
   const { data: options, error: oErr } = await supabase
     .from("poll_options")
     .select("id, poll_id, question_id, label, image_url, style, sort_order")
-    .eq("poll_id", poll.id)
+    .eq("poll_id", toStringValue(pollRow.id))
     .order("sort_order", { ascending: true });
 
   if (oErr) {
@@ -83,31 +117,37 @@ export async function getPollBySlug(slug: string): Promise<PollDetail | null> {
   }
 
   return {
-    id: String(poll.id),
-    slug: String(poll.slug),
-    title: poll.title ?? "",
-    description: poll.description ?? null,
-    hero_image_url: poll.hero_image_url ?? null,
-    card_image_url: poll.card_image_url ?? null,
-    status: poll.status,
-    starts_at: poll.starts_at ?? null,
-    ends_at: poll.ends_at ?? null,
-    created_at: poll.created_at ?? "",
-    questions: (questions || []).map((x: any) => ({
-      id: String(x.id),
-      poll_id: String(x.poll_id),
-      prompt: x.prompt ?? "",
-      sort_order: Number(x.sort_order ?? 0),
-    })),
-    options: (options || []).map((x: any) => ({
-      id: String(x.id),
-      poll_id: String(x.poll_id),
-      question_id: String(x.question_id),
-      label: x.label ?? "",
-      image_url: x.image_url ?? null,
-      style: (x.style as "text" | "image") ?? "text",
-      sort_order: Number(x.sort_order ?? 0),
-    })),
+    id: toStringValue(pollRow.id),
+    slug: toStringValue(pollRow.slug),
+    title: toStringValue(pollRow.title, ""),
+    description: toNullableString(pollRow.description),
+    hero_image_url: toNullableString(pollRow.hero_image_url),
+    card_image_url: toNullableString(pollRow.card_image_url),
+    status: pollRow.status as PollDetail["status"],
+    starts_at: toNullableString(pollRow.starts_at),
+    ends_at: toNullableString(pollRow.ends_at),
+    created_at: toStringValue(pollRow.created_at, ""),
+    questions: ((questions as unknown[] | null | undefined) ?? []).map((xInput) => {
+      const x = asRow(xInput);
+      return {
+        id: toStringValue(x.id),
+        poll_id: toStringValue(x.poll_id),
+        prompt: toStringValue(x.prompt, ""),
+        sort_order: toNumberValue(x.sort_order ?? 0),
+      };
+    }),
+    options: ((options as unknown[] | null | undefined) ?? []).map((xInput) => {
+      const x = asRow(xInput);
+      return {
+        id: toStringValue(x.id),
+        poll_id: toStringValue(x.poll_id),
+        question_id: toStringValue(x.question_id),
+        label: toStringValue(x.label, ""),
+        image_url: toNullableString(x.image_url),
+        style: ((x.style as "text" | "image" | null | undefined) ?? "text"),
+        sort_order: toNumberValue(x.sort_order ?? 0),
+      };
+    }),
   };
 }
 
@@ -133,12 +173,15 @@ export async function getMyVotes(pollId: string): Promise<UserVoteRow[]> {
     return [];
   }
 
-  return (data || []).map((v: any) => ({
-    poll_id: String(v.poll_id),
-    question_id: String(v.question_id),
-    option_id: String(v.option_id),
-    user_id: String(v.user_id),
-  }));
+  return ((data as unknown[] | null | undefined) ?? []).map((vInput) => {
+    const v = asRow(vInput);
+    return {
+      poll_id: toStringValue(v.poll_id),
+      question_id: toStringValue(v.question_id),
+      option_id: toStringValue(v.option_id),
+      user_id: toStringValue(v.user_id),
+    };
+  });
 }
 
 export async function submitPollVotes(input: {
@@ -158,7 +201,7 @@ export async function submitPollVotes(input: {
     poll_id: input.pollId,
     question_id: a.questionId,
     option_id: a.optionId,
-    user_id: userRes.user!.id,
+    user_id: userRes.user.id,
   }));
 
   const { error } = await supabase.from("poll_votes").insert(rows);

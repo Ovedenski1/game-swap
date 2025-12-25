@@ -41,9 +41,21 @@ type EditorPoll = {
   }[];
 };
 
-function toDateOrNull(value?: any) {
+type CreatePollPayload = Parameters<typeof adminCreatePoll>[0];
+
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return "Unknown error";
+}
+
+function toDateOrNull(value?: unknown) {
   if (!value) return null;
-  const d = new Date(value);
+  const d = new Date(value as string | number | Date);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -68,7 +80,7 @@ function buildLocalDate(date: Date, time: string) {
     Number.isFinite(hh) ? hh : 0,
     Number.isFinite(mm) ? mm : 0,
     Number.isFinite(ss) ? ss : 0,
-    0
+    0,
   );
 }
 
@@ -202,7 +214,7 @@ export default function AdminPollEditor({
   initial,
 }: {
   mode: "create" | "edit";
-  initial?: Partial<any>;
+  initial?: Partial<EditorPoll>;
 }) {
   const router = useRouter();
 
@@ -263,7 +275,7 @@ export default function AdminPollEditor({
   function updateOption(
     qi: number,
     oi: number,
-    patch: Partial<EditorPoll["questions"][0]["options"][0]>
+    patch: Partial<EditorPoll["questions"][0]["options"][0]>,
   ) {
     setPoll((p) => {
       const nextQ = [...p.questions];
@@ -350,7 +362,7 @@ export default function AdminPollEditor({
     try {
       const nowIso = new Date().toISOString();
 
-      const payload = {
+      const payload: CreatePollPayload = {
         title: poll.title.trim(),
         slug: poll.slug.trim() || null,
         description: poll.description.trim() || null,
@@ -375,7 +387,7 @@ export default function AdminPollEditor({
       };
 
       if (mode === "create") {
-        await adminCreatePoll(payload as any);
+        await adminCreatePoll(payload);
 
         showBanner("Created ✓ Redirecting…");
         window.setTimeout(() => {
@@ -384,12 +396,12 @@ export default function AdminPollEditor({
         }, 900);
       } else {
         if (!poll.id) throw new Error("Missing poll id.");
-        await adminUpdatePoll(poll.id, payload as any);
+        await adminUpdatePoll(poll.id, payload);
         router.refresh();
         showBanner("Saved ✓");
       }
-    } catch (e: any) {
-      setError(String(e?.message || e));
+    } catch (e: unknown) {
+      setError(getErrorMessage(e));
     } finally {
       setSaving(false);
       savingRef.current = false;
@@ -571,7 +583,7 @@ export default function AdminPollEditor({
                           ].join(" ")}
                           value={o.style}
                           onChange={(e) =>
-                            updateOption(qi, oi, { style: e.target.value as any })
+                            updateOption(qi, oi, { style: e.target.value as "text" | "image" })
                           }
                         >
                           <option value="text">text</option>
@@ -616,11 +628,7 @@ export default function AdminPollEditor({
 
         <div className="mt-6 flex items-center justify-between gap-3">
           <div className="text-xs text-text-muted">
-            {canSave ? (
-              <span className="text-bronze">Ready to save.</span>
-            ) : (
-              "Complete the required fields to enable saving."
-            )}
+            {canSave ? <span className="text-bronze">Ready to save.</span> : "Complete the required fields to enable saving."}
           </div>
 
           <Button type="button" variant="outline" onClick={addQuestion} className={outlineBtn}>

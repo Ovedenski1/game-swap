@@ -61,6 +61,16 @@ function getLabel(month: number) {
   return UPCOMING_MONTHS.find((m) => m.value === month)?.label ?? String(month);
 }
 
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object" && "message" in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return "Unknown error";
+}
+
 export default function UpcomingGamesAdminEditor() {
   const currentYear = new Date().getFullYear();
   const yearOptions = useMemo(
@@ -107,8 +117,8 @@ export default function UpcomingGamesAdminEditor() {
     try {
       const data = await adminGetUpcomingGames(nextYear);
       setItems(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load upcoming games.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e) || "Failed to load upcoming games.");
     } finally {
       setLoading(false);
     }
@@ -202,8 +212,8 @@ export default function UpcomingGamesAdminEditor() {
         platforms: [],
         link_url: "",
       }));
-    } catch (e: any) {
-      setError(e?.message || "Failed to save upcoming game.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e) || "Failed to save upcoming game.");
     } finally {
       setSaving(false);
     }
@@ -226,8 +236,8 @@ export default function UpcomingGamesAdminEditor() {
           link_url: "",
         }));
       }
-    } catch (e: any) {
-      setError(e?.message || "Failed to delete upcoming game.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e) || "Failed to delete upcoming game.");
     }
   }
 

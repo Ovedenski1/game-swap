@@ -12,7 +12,6 @@ import {
   adminCreateHeroSlide,
   adminUpdateHeroSlide,
   adminDeleteHeroSlide,
-
   adminGetPlayersGameOfMonth,
   adminUpsertPlayersGameOfMonth,
   adminDeletePlayersGameOfMonth,
@@ -50,6 +49,42 @@ type PgomFormState = {
   month_label: string;
 };
 
+type PgomUpsertPayload = {
+  position: number;
+  title: string | null;
+  image_url: string;
+  link_url: string | null;
+  total_votes?: number | null;
+  votes_link_url?: string | null;
+  month_label?: string | null;
+};
+
+type PgomDeletePayload = {
+  id: string | null;
+  position: number;
+};
+
+type HeroSlideUpsertPayload = {
+  img: string;
+  title?: string;
+  link_url?: string;
+};
+
+type PgomItemLike = PlayersGameOfMonthItem & {
+  id?: string | number | null;
+  position?: number | string | null;
+
+  // naming variants we might get back
+  image_url?: string | null;
+  img?: string | null;
+  link_url?: string | null;
+
+  title?: string | null;
+  total_votes?: number | null;
+  votes_link_url?: string | null;
+  month_label?: string | null;
+};
+
 const POSITIONS = [1, 2, 3, 4, 5] as const;
 
 const outlineBtn =
@@ -67,7 +102,8 @@ export default function AdminDashboard({
 }: AdminDashboardProps) {
   const [stories, setStories] = useState<NewsItem[]>(initialStories);
   const [ratings, setRatings] = useState<RatingItem[]>(initialRatings);
-  const [heroSlides, setHeroSlides] = useState<HeroSlideItem[]>(initialHeroSlides);
+  const [heroSlides, setHeroSlides] =
+    useState<HeroSlideItem[]>(initialHeroSlides);
 
   const [heroForm, setHeroForm] = useState<HeroFormState>({
     id: null,
@@ -88,7 +124,17 @@ export default function AdminDashboard({
 
   const pgomByPosition = useMemo(() => {
     const map = new Map<number, PlayersGameOfMonthItem>();
-    for (const it of pgom) map.set(Number((it as any).position), it);
+    for (const it of pgom) {
+      const posRaw = (it as unknown as PgomItemLike).position;
+      const pos =
+        typeof posRaw === "number"
+          ? posRaw
+          : typeof posRaw === "string"
+            ? Number(posRaw)
+            : NaN;
+
+      if (Number.isFinite(pos)) map.set(pos, it);
+    }
     return map;
   }, [pgom]);
 
@@ -126,8 +172,14 @@ export default function AdminDashboard({
     try {
       const data = await adminGetPlayersGameOfMonth();
       setPgom(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err?.message || "Failed to load Players game of the month.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to load Players game of the month.";
+      setError(message);
     } finally {
       setLoadingPgom(false);
     }
@@ -144,8 +196,14 @@ export default function AdminDashboard({
     try {
       await adminDeleteStory(id);
       setStories((prev) => prev.filter((s) => String(s.id) !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to delete story.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to delete story.";
+      setError(message);
     }
   }
 
@@ -155,44 +213,67 @@ export default function AdminDashboard({
     try {
       await adminDeleteRating(id);
       setRatings((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: any) {
-      setError(err.message || "Failed to delete rating.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to delete rating.";
+      setError(message);
     }
   }
 
-  async function handleSaveHero(e: React.FormEvent) {
+  async function handleSaveHero(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSavingHero(true);
     try {
       if (!heroForm.img) throw new Error("Image is required for a hero slide.");
-      const payload = {
+
+      const payload: HeroSlideUpsertPayload = {
         img: heroForm.img.trim(),
         title: heroForm.title.trim() || undefined,
         link_url: heroForm.href.trim() || undefined,
       };
-      let saved: any;
+
+      let saved: HeroSlideItem;
+
       if (heroForm.id == null) {
         saved = await adminCreateHeroSlide(payload);
         setHeroSlides((prev) => [saved, ...prev]);
       } else {
         saved = await adminUpdateHeroSlide(heroForm.id, payload);
-        setHeroSlides((prev) => prev.map((s) => (s.id === saved.id ? saved : s)));
+        setHeroSlides((prev) =>
+          prev.map((s) => (s.id === saved.id ? saved : s)),
+        );
       }
+
       resetHeroForm();
-    } catch (err: any) {
-      setError(err.message || "Failed to save hero slide.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to save hero slide.";
+      setError(message);
     } finally {
       setSavingHero(false);
     }
   }
 
   function editHeroSlide(slide: HeroSlideItem) {
+    const linkUrl =
+      "link_url" in (slide as unknown as Record<string, unknown>)
+        ? String((slide as unknown as { link_url?: unknown }).link_url ?? "")
+        : "";
+
     setHeroForm({
       id: slide.id,
       title: slide.title ?? "",
       img: slide.img,
-      href: (slide as any).link_url ?? "",
+      href: linkUrl,
     });
   }
 
@@ -203,40 +284,62 @@ export default function AdminDashboard({
       await adminDeleteHeroSlide(id);
       setHeroSlides((prev) => prev.filter((s) => s.id !== id));
       if (heroForm.id === id) resetHeroForm();
-    } catch (err: any) {
-      setError(err.message || "Failed to delete hero slide.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to delete hero slide.";
+      setError(message);
     }
   }
 
   function editPgom(position: number) {
-    const it = pgomByPosition.get(position);
+    const it = pgomByPosition.get(position) as PlayersGameOfMonthItem | undefined;
     if (!it) {
       resetPgomForm(position);
       return;
     }
+
+    const like = it as unknown as PgomItemLike;
+
+    const id =
+      like.id === null || like.id === undefined ? null : String(like.id);
+
+    const title = like.title ?? "";
+    const img = like.image_url ?? like.img ?? "";
+    const href = like.link_url ?? "";
+
+    const totalVotes =
+      typeof like.total_votes === "number" ? like.total_votes : null;
+
+    const votesHref = like.votes_link_url ?? "";
+    const monthLabel = like.month_label ?? "THIS MONTH";
+
     setPgomForm({
-      id: String((it as any).id ?? null),
+      id,
       position,
-      title: (it as any).title ?? "",
-      img: (it as any).image_url ?? (it as any).img ?? "",
-      href: (it as any).link_url ?? "",
-      total_votes:
-        typeof (it as any).total_votes === "number" ? (it as any).total_votes : null,
-      votes_href: (it as any).votes_link_url ?? "",
-      month_label: (it as any).month_label ?? "THIS MONTH",
+      title,
+      img,
+      href,
+      total_votes: totalVotes,
+      votes_href: votesHref,
+      month_label: monthLabel,
     });
   }
 
-  async function handleSavePgom(e: React.FormEvent) {
+  async function handleSavePgom(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSavingPgom(true);
+
     try {
-      if (!pgomForm.img?.trim()) {
+      if (!pgomForm.img.trim()) {
         throw new Error("Image is required for Players game of the month.");
       }
 
-      const payload: any = {
+      const payload: PgomUpsertPayload = {
         position: Number(pgomForm.position),
         title: pgomForm.title.trim() || null,
         image_url: pgomForm.img.trim(),
@@ -254,8 +357,14 @@ export default function AdminDashboard({
 
       await refreshPgom();
       resetPgomForm(pgomForm.position);
-    } catch (err: any) {
-      setError(err?.message || "Failed to save Players game of the month.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to save Players game of the month.";
+      setError(message);
     } finally {
       setSavingPgom(false);
     }
@@ -269,15 +378,25 @@ export default function AdminDashboard({
 
     setError(null);
     try {
-      await adminDeletePlayersGameOfMonth({
-        id: (it as any).id ? String((it as any).id) : null,
+      const like = it as unknown as PgomItemLike;
+
+      const payload: PgomDeletePayload = {
+        id: like.id == null ? null : String(like.id),
         position,
-      } as any);
+      };
+
+      await adminDeletePlayersGameOfMonth(payload);
 
       await refreshPgom();
       if (pgomForm.position === position) resetPgomForm(position);
-    } catch (err: any) {
-      setError(err?.message || "Failed to delete Players game of the month item.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to delete Players game of the month item.";
+      setError(message);
     }
   }
 
@@ -337,7 +456,9 @@ export default function AdminDashboard({
                   onSubmit={handleSaveHero}
                   className="mb-4 space-y-3 rounded-lg border border-white/10 bg-black/30 p-4"
                 >
-                  <h3 className="font-medium">{heroForm.id ? "Edit Slide" : "Create Slide"}</h3>
+                  <h3 className="font-medium">
+                    {heroForm.id ? "Edit Slide" : "Create Slide"}
+                  </h3>
 
                   <div className="grid gap-3 md:grid-cols-2">
                     <NewsImageUpload
@@ -348,21 +469,29 @@ export default function AdminDashboard({
 
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <label className="text-xs text-white/60">Alt text / title</label>
+                        <label className="text-xs text-white/60">
+                          Alt text / title
+                        </label>
                         <input
                           className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
                           value={heroForm.title}
-                          onChange={(e) => setHeroForm((f) => ({ ...f, title: e.target.value }))}
+                          onChange={(e) =>
+                            setHeroForm((f) => ({ ...f, title: e.target.value }))
+                          }
                           placeholder="Optional text shown for accessibility"
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-xs text-white/60">Slide link (optional)</label>
+                        <label className="text-xs text-white/60">
+                          Slide link (optional)
+                        </label>
                         <input
                           className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
                           value={heroForm.href}
-                          onChange={(e) => setHeroForm((f) => ({ ...f, href: e.target.value }))}
+                          onChange={(e) =>
+                            setHeroForm((f) => ({ ...f, href: e.target.value }))
+                          }
                           placeholder="/news/some-slug  OR  /rent  OR  https://..."
                         />
                         <p className="text-[11px] text-white/40">
@@ -378,7 +507,11 @@ export default function AdminDashboard({
                       disabled={savingHero}
                       className="rounded-md bg-lime-400 px-3 py-1.5 text-xs font-semibold text-black disabled:opacity-60"
                     >
-                      {savingHero ? "Saving…" : heroForm.id ? "Update Slide" : "Create Slide"}
+                      {savingHero
+                        ? "Saving…"
+                        : heroForm.id
+                          ? "Update Slide"
+                          : "Create Slide"}
                     </button>
                     {heroForm.id && (
                       <button
@@ -410,17 +543,25 @@ export default function AdminDashboard({
                             />
                           </div>
                           <div className="flex-1">
-                            <div className="font-medium line-clamp-1">{s.title || "(no title)"}</div>
+                            <div className="font-medium line-clamp-1">
+                              {s.title || "(no title)"}
+                            </div>
 
-                            {(s as any).link_url ? (
+                            {"link_url" in (s as unknown as Record<string, unknown>) &&
+                            (s as unknown as { link_url?: unknown }).link_url ? (
                               <div className="text-[11px] text-white/50 line-clamp-1">
-                                Link: {(s as any).link_url}
+                                Link:{" "}
+                                {String(
+                                  (s as unknown as { link_url?: unknown }).link_url,
+                                )}
                               </div>
                             ) : (
                               <div className="text-[11px] text-white/30">No link</div>
                             )}
 
-                            <div className="text-[11px] text-white/40 line-clamp-1">{s.img}</div>
+                            <div className="text-[11px] text-white/40 line-clamp-1">
+                              {s.img}
+                            </div>
                           </div>
                         </div>
 
@@ -443,7 +584,9 @@ export default function AdminDashboard({
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-white/60">No slides yet. Create one above.</p>
+                    <p className="text-xs text-white/60">
+                      No slides yet. Create one above.
+                    </p>
                   )}
                 </div>
               </section>
@@ -477,12 +620,21 @@ export default function AdminDashboard({
                         >
                           <div className="flex items-center gap-3 flex-1">
                             <div className="relative h-12 w-20 overflow-hidden rounded-md bg-black/40 flex-shrink-0">
-                              <Image src={s.img} alt={s.title} fill className="object-cover" />
+                              <Image
+                                src={s.img}
+                                alt={s.title}
+                                fill
+                                className="object-cover"
+                              />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium line-clamp-1">{s.title}</div>
+                              <div className="font-medium line-clamp-1">
+                                {s.title}
+                              </div>
                               {s.subtitle && (
-                                <div className="text-xs text-white/60 line-clamp-1">{s.subtitle}</div>
+                                <div className="text-xs text-white/60 line-clamp-1">
+                                  {s.subtitle}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -550,7 +702,12 @@ export default function AdminDashboard({
                         >
                           <div className="flex items-center gap-3 flex-1">
                             <div className="relative h-12 w-20 overflow-hidden rounded-md bg-black/40 flex-shrink-0">
-                              <Image src={r.img} alt={r.game_title} fill className="object-cover" />
+                              <Image
+                                src={r.img}
+                                alt={r.game_title}
+                                fill
+                                className="object-cover"
+                              />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="font-medium line-clamp-1">
@@ -560,7 +717,9 @@ export default function AdminDashboard({
                                 </span>
                               </div>
                               {r.subtitle && (
-                                <div className="text-xs text-white/60 line-clamp-1">{r.subtitle}</div>
+                                <div className="text-xs text-white/60 line-clamp-1">
+                                  {r.subtitle}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -690,7 +849,9 @@ export default function AdminDashboard({
                         <input
                           className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
                           value={pgomForm.href}
-                          onChange={(e) => setPgomForm((f) => ({ ...f, href: e.target.value }))}
+                          onChange={(e) =>
+                            setPgomForm((f) => ({ ...f, href: e.target.value }))
+                          }
                           placeholder="/ratings/some-slug  OR  /polls  OR  https://..."
                         />
                         <p className="text-[11px] text-white/40">
@@ -709,7 +870,8 @@ export default function AdminDashboard({
                               onChange={(e) =>
                                 setPgomForm((f) => ({
                                   ...f,
-                                  total_votes: e.target.value === "" ? null : Number(e.target.value),
+                                  total_votes:
+                                    e.target.value === "" ? null : Number(e.target.value),
                                 }))
                               }
                               placeholder="110"
@@ -757,8 +919,8 @@ export default function AdminDashboard({
                       {savingPgom
                         ? "Saving…"
                         : pgomByPosition.get(pgomForm.position)
-                        ? `Update #${pgomForm.position}`
-                        : `Create #${pgomForm.position}`}
+                          ? `Update #${pgomForm.position}`
+                          : `Create #${pgomForm.position}`}
                     </button>
 
                     {pgomByPosition.get(pgomForm.position) && (
@@ -778,7 +940,18 @@ export default function AdminDashboard({
 
                   <div className="grid gap-2 md:grid-cols-2">
                     {POSITIONS.map((pos) => {
-                      const it = pgomByPosition.get(pos);
+                      const it = pgomByPosition.get(pos) as PlayersGameOfMonthItem | undefined;
+                      const like = it as unknown as PgomItemLike | undefined;
+
+                      const imageUrl = like?.image_url ?? like?.img ?? "";
+                      const title = like?.title ?? "";
+                      const linkUrl = like?.link_url ?? "";
+
+                      const monthLabel =
+                        typeof like?.month_label === "string" ? like.month_label : "—";
+                      const totalVotes =
+                        typeof like?.total_votes === "number" ? like.total_votes : null;
+
                       return (
                         <button
                           key={pos}
@@ -787,12 +960,15 @@ export default function AdminDashboard({
                           className="text-left rounded-lg border border-white/10 bg-black/20 hover:bg-white/[0.03] transition px-3 py-2"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="text-xs font-semibold text-white/80 w-10">#{pos}</div>
+                            <div className="text-xs font-semibold text-white/80 w-10">
+                              #{pos}
+                            </div>
+
                             <div className="relative h-10 w-16 overflow-hidden rounded-md bg-black/40 flex-shrink-0">
-                              {it?.image_url ? (
+                              {imageUrl ? (
                                 <Image
-                                  src={it.image_url}
-                                  alt={it.title || `#${pos}`}
+                                  src={imageUrl}
+                                  alt={title || `#${pos}`}
                                   fill
                                   className="object-cover"
                                 />
@@ -802,22 +978,23 @@ export default function AdminDashboard({
                                 </div>
                               )}
                             </div>
+
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-medium line-clamp-1">
-                                {it?.title || `No #${pos} item yet`}
+                                {title || `No #${pos} item yet`}
                               </div>
                               <div className="text-[11px] text-white/40 line-clamp-1">
-                                {it?.link_url ? `Link: ${it.link_url}` : "No link"}
+                                {linkUrl ? `Link: ${linkUrl}` : "No link"}
                               </div>
+
                               {pos === 1 && (
                                 <div className="text-[11px] text-white/40 line-clamp-1">
-                                  Month: {(it as any)?.month_label ?? "—"} • Votes:{" "}
-                                  {typeof (it as any)?.total_votes === "number"
-                                    ? (it as any).total_votes
-                                    : "—"}
+                                  Month: {monthLabel} • Votes:{" "}
+                                  {totalVotes != null ? totalVotes : "—"}
                                 </div>
                               )}
                             </div>
+
                             <div className="text-xs text-white/50">Edit</div>
                           </div>
                         </button>
@@ -826,7 +1003,8 @@ export default function AdminDashboard({
                   </div>
 
                   <p className="text-[11px] text-white/40 mt-2">
-                    This section controls the images shown on HOME under “Players game of the month”.
+                    This section controls the images shown on HOME under “Players game of the
+                    month”.
                   </p>
                 </div>
               </section>
