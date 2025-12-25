@@ -1,12 +1,13 @@
 // app/ratings/page.tsx
 import { createClient } from "@/lib/supabase/server";
 import RatingCard from "@/components/RatingCard";
+import RatingsFilters from "@/components/RatingsFilters";
 
 type RatingsPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     q?: string;
     sort?: string;
-  };
+  }>;
 };
 
 function getSortConfig(sortParam: string | undefined) {
@@ -26,15 +27,16 @@ function getSortConfig(sortParam: string | undefined) {
 }
 
 export default async function RatingsPage({ searchParams }: RatingsPageProps) {
-  const q = (searchParams?.q || "").trim();
-  const sortParam = searchParams?.sort || "newest";
+  const sp = (await searchParams) ?? {};
+  const q = (sp.q || "").trim();
+  const sortParam = sp.sort || "newest";
   const sort = getSortConfig(sortParam);
 
   const supabase = await createClient();
 
   let query = supabase
     .from("ratings")
-    .select("*") // we only use a few fields; * keeps it flexible
+    .select("*")
     .order(sort.column, { ascending: sort.ascending });
 
   if (q) {
@@ -59,76 +61,62 @@ export default async function RatingsPage({ searchParams }: RatingsPageProps) {
   }));
 
   return (
-    <div className="min-h-screen bg-background text-white">
-      <main className="flex-1 flex">
-        <div className="flex-1 max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 flex">
-          <div className="flex-1 bg-surface ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] rounded-b-3xl flex flex-col">
-            <div className="p-4 sm:p-6 lg:p-8 flex-1 flex flex-col">
-              <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight">
-                    Game Ratings
-                  </h1>
-                  <p className="text-xs sm:text-sm text-white/70 mt-1">
-                    Browse all rated games. Filter by newest, oldest, title, or
-                    score.
-                  </p>
-                </div>
+    <div className="max-w-[1500px] mx-auto px-3 sm:px-6 lg:px-6 py-8">
+      {/* Header (Poll Editor style) */}
+      <header className="text-center">
+        <div className="mx-auto mb-3 h-[2px] w-16 rounded-full bg-bronze/80" />
 
-                {/* Filters: plain GET form so no extra client code */}
-                <form
-                  method="GET"
-                  className="flex flex-col sm:flex-row gap-2 sm:items-center"
-                >
-                  <input
-                    type="text"
-                    name="q"
-                    defaultValue={q}
-                    placeholder="Search by game title…"
-                    className="w-full sm:w-56 rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-lime-400"
-                  />
-                  <select
-                    name="sort"
-                    defaultValue={sortParam}
-                    className="w-full sm:w-40 rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-lime-400"
-                  >
-                    <option value="newest">Newest</option>
-                    <option value="oldest">Oldest</option>
-                    <option value="title">Title (A–Z)</option>
-                    <option value="score-desc">Score (highest)</option>
-                    <option value="score-asc">Score (lowest)</option>
-                  </select>
-                </form>
-              </header>
+        <h1
+          className={[
+            "text-3xl sm:text-4xl lg:text-5xl font-extrabold uppercase",
+            "tracking-tight text-foreground leading-none",
+            "[text-shadow:0_2px_0_rgba(0,0,0,0.35)]",
+          ].join(" ")}
+        >
+          Game Ratings
+        </h1>
 
-              {ratings.length === 0 ? (
-                <p className="text-sm text-white/70">
-                  No ratings found yet. Try changing the filters or add a rating
-                  from the admin dashboard.
-                </p>
-              ) : (
-                <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pb-8">
-                  {ratings.map((r) => (
-                    <RatingCard
-                      key={r.id}
-                      id={r.id}
-                      slug={r.slug}
-                      title={r.title}
-                      img={r.img}
-                      score={r.score}
-                      summary={r.summary}
-                    />
-                  ))}
-                </section>
-              )}
-            </div>
-          </div>
+        <p className="mt-3 text-xs sm:text-sm text-text-muted">
+          Browse all rated games. Filter by newest, oldest, title, or score.
+        </p>
+
+        <div className="mt-6 flex justify-center">
+          <RatingsFilters initialQ={q} initialSort={sortParam} />
         </div>
-      </main>
+      </header>
 
-      <footer className="bg-navbar border-t border-border text-foreground text-center py-4 text-xs sm:text-sm font-medium">
-        © {new Date().getFullYear()} GameLink — Built with ❤️ using Next.js
-      </footer>
+      <div className="mt-7 h-px w-full bg-border/40" />
+
+      <div className="mt-6">
+        {ratings.length === 0 ? (
+          <p className="text-sm text-text-muted text-center py-10">
+            No ratings found yet. Try changing the filters or add a rating from
+            the admin dashboard.
+          </p>
+        ) : (
+          <section
+            className={[
+              "grid pb-8",
+              "gap-4 lg:gap-5",
+              "sm:grid-cols-2",
+              "lg:grid-cols-3",
+              "xl:grid-cols-4",
+              "2xl:grid-cols-5",
+            ].join(" ")}
+          >
+            {ratings.map((r) => (
+              <RatingCard
+                key={r.id}
+                id={r.id}
+                slug={r.slug}
+                title={r.title}
+                img={r.img}
+                score={r.score}
+              />
+            ))}
+          </section>
+        )}
+      </div>
     </div>
   );
 }

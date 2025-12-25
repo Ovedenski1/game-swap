@@ -2,7 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { notFound, redirect  } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +30,13 @@ type StoryBlock =
   | { id?: string; type: "heading"; level: 2 | 3; text: string }
   | { id?: string; type: "image"; url: string; caption?: string }
   | { id?: string; type: "quote"; text: string }
-  | { id?: string; type: "embed"; url: string; title?: string; size?: EmbedSize }
+  | {
+      id?: string;
+      type: "embed";
+      url: string;
+      title?: string;
+      size?: EmbedSize;
+    }
   | {
       id?: string;
       type: "card";
@@ -64,17 +70,14 @@ type StoryBlock =
 
 function looksLikeUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value,
+    value
   );
 }
 
 async function fetchStoryByIdOrSlug(idOrSlug: string) {
   const supabase = await createClient();
 
-  const baseSelect = supabase
-    .from("top_stories")
-    .select(
-      `
+  const baseSelect = supabase.from("top_stories").select(`
         id,
         slug,
         title,
@@ -91,8 +94,7 @@ async function fetchStoryByIdOrSlug(idOrSlug: string) {
         author_role,
         author_avatar_url,
         reviewed_by
-      `,
-    );
+      `);
 
   const isUuid = looksLikeUuid(idOrSlug);
 
@@ -108,9 +110,9 @@ async function fetchStoryByIdOrSlug(idOrSlug: string) {
 /* SEO metadata                                                       */
 /* ------------------------------------------------------------------ */
 
-export async function generateMetadata(
-  { params }: PageProps,
-): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   const resolvedParams = params instanceof Promise ? await params : params;
   const { id } = resolvedParams;
 
@@ -140,8 +142,7 @@ export async function generateMetadata(
       : null) ??
     "Game news and reviews on Checkpoint.";
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
   const pathSegment = (data.slug as string | null) ?? String(data.id);
   const canonicalUrl = `${baseUrl}/news/${pathSegment}`;
@@ -261,8 +262,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
       : null;
 
   // Absolute URL for sharing
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const articlePath = data.slug
     ? `/news/${data.slug as string}`
     : `/news/${data.id as string}`;
@@ -282,9 +282,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
   if (blocks.length === 0) {
     const bodyText: string =
-      (data.summary as string | null) ??
-      (data.subtitle as string | null) ??
-      "";
+      (data.summary as string | null) ?? (data.subtitle as string | null) ?? "";
 
     const paragraphs = bodyText
       .split(/\n{2,}/)
@@ -299,12 +297,13 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
   const supabase = await createClient();
 
+  // ✅ only change: show MORE stories than ratings in the sidebar
   const { data: moreStoriesRaw } = await supabase
     .from("top_stories")
     .select("id, slug, title, subtitle, image_url, created_at")
     .neq("id", articleId)
     .order("created_at", { ascending: false })
-    .limit(4);
+    .limit(10);
 
   const moreStories =
     moreStoriesRaw?.map((row: any) => ({
@@ -320,7 +319,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
     })) ?? [];
 
   const allRatings = await adminGetRatings();
-  const sidebarRatings = allRatings.slice(0, 3);
+  const sidebarRatings = allRatings.slice(0, 10);
 
   function renderBlock(block: StoryBlock, index: number) {
     const key = (block as any).id ?? index;
@@ -411,14 +410,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
         if (!url) return null;
 
-        return (
-          <SocialEmbed
-            key={key}
-            url={url}
-            title={embedTitle}
-            size={size}
-          />
-        );
+        return <SocialEmbed key={key} url={url} title={embedTitle} size={size} />;
       }
 
       case "gallery": {
@@ -444,10 +436,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
                 {title}
               </h3>
             )}
-            <StoryGallery
-              images={galleryImages}
-              withBackground={withBackground}
-            />
+            <StoryGallery images={galleryImages} withBackground={withBackground} />
           </div>
         );
       }
@@ -463,8 +452,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
         const mediaType: CardMediaType = b.mediaType ?? "none";
         const _mediaSizeMode: CardMediaSizeMode =
           b.mediaSizeMode === "flex" ? "flex" : "fixed";
-        const cardWidth: CardWidth =
-          b.cardWidth === "full" ? "full" : "narrow";
+        const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
 
         const layout: CardLayout =
           b.layout === "mediaBottom" ||
@@ -474,93 +462,73 @@ export default async function NewsArticlePage({ params }: PageProps) {
             : "mediaTop";
 
         const videoUrl = b.videoUrl as string | undefined;
-        const embedUrl =
-          mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
+        const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(videoUrl) : null;
 
         const imageUrls: string[] = Array.isArray(b.imageUrls)
           ? b.imageUrls.filter(Boolean)
           : [];
-        const imageLayout: "row" | "grid" =
-          b.imageLayout === "grid" ? "grid" : "row";
+        const imageLayout: "row" | "grid" = b.imageLayout === "grid" ? "grid" : "row";
 
         if (!title && !body && !imageUrls.length && !embedUrl) return null;
 
-        const media =
-          embedUrl ? (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
-              <iframe
-                src={embedUrl}
-                title={title || "YouTube video"}
-                className="h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-          ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
-            <div
-              className={
-                imageLayout === "grid"
-                  ? "grid grid-cols-3 gap-3"
-                  : "flex gap-3"
-              }
-            >
-              {imageUrls.map((url, imgIndex) => {
-                const modalId = `card-modal-${index}-${imgIndex}`;
+        const media = embedUrl ? (
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
+            <iframe
+              src={embedUrl}
+              title={title || "YouTube video"}
+              className="h-full w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
+        ) : mediaType === "imageGrid" && imageUrls.length > 0 ? (
+          <div className={imageLayout === "grid" ? "grid grid-cols-3 gap-3" : "flex gap-3"}>
+            {imageUrls.map((url, imgIndex) => {
+              const modalId = `card-modal-${index}-${imgIndex}`;
 
-                return (
-                  <div key={modalId} className="relative aspect-square w-full">
-                    <input
-                      type="checkbox"
-                      id={modalId}
-                      className="peer hidden"
+              return (
+                <div key={modalId} className="relative aspect-square w-full">
+                  <input type="checkbox" id={modalId} className="peer hidden" />
+
+                  <label
+                    htmlFor={modalId}
+                    className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40"
+                  >
+                    <Image
+                      src={url}
+                      alt={title || `Gallery image ${imgIndex + 1}`}
+                      fill
+                      sizes="(min-width: 1024px) 33vw, 33vw"
+                      className="object-cover"
                     />
+                  </label>
 
-                    <label
-                      htmlFor={modalId}
-                      className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40"
-                    >
-                      <Image
-                        src={url}
-                        alt={title || `Gallery image ${imgIndex + 1}`}
-                        fill
-                        sizes="(min-width: 1024px) 33vw, 33vw"
-                        className="object-cover"
-                      />
-                    </label>
-
-                    <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
-                      <label
-                        htmlFor={modalId}
-                        className="absolute inset-0 cursor-zoom-out"
-                      />
-                      <div className="relative z-50 max-w-4xl w-full">
-                        <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
-                          <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
-                            <Image
-                              src={url}
-                              alt={
-                                title || `Gallery image ${imgIndex + 1}`
-                              }
-                              fill
-                              sizes="(min-width: 1024px) 900px, 100vw"
-                              className="object-contain bg-black"
-                            />
-                          </div>
+                  <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
+                    <label htmlFor={modalId} className="absolute inset-0 cursor-zoom-out" />
+                    <div className="relative z-50 max-w-4xl w-full">
+                      <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
+                        <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
+                          <Image
+                            src={url}
+                            alt={title || `Gallery image ${imgIndex + 1}`}
+                            fill
+                            sizes="(min-width: 1024px) 900px, 100vw"
+                            className="object-contain bg-black"
+                          />
                         </div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          ) : null;
+                </div>
+              );
+            })}
+          </div>
+        ) : null;
 
         const textSection = (
           <>
             {title && (
-              <h3 className="text-sm font-semibold text-white mb-1 break-words">
-                {title}
-              </h3>
+              <h3 className="text-sm font-semibold text-white mb-1 break-words">{title}</h3>
             )}
             {body && (
               <div className="text-xs sm:text-sm text-white/80 mb-1 whitespace-pre-wrap break-all">
@@ -608,8 +576,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
           );
         }
 
-        const widthClass =
-          cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
+        const widthClass = cardWidth === "full" ? "w-full" : "w-full sm:max-w-md";
 
         return (
           <div key={key} className={widthClass}>
@@ -619,12 +586,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
       }
 
       case "divider":
-        return (
-          <hr
-            key={key}
-            className="my-6 border-t border-white/10 rounded-full"
-          />
-        );
+        return <hr key={key} className="my-6 border-t border-white/10 rounded-full" />;
 
       default:
         return null;
@@ -632,300 +594,289 @@ export default async function NewsArticlePage({ params }: PageProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background text-white">
-      <main className="flex-1 flex">
-        <div className="flex-1 max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 flex">
-          <div className="flex-1 bg-surface ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] rounded-b-3xl flex flex-col">
-            <div className="p-4 sm:p-6 lg:p-8 flex-1 flex flex-col">
-              <Link
-                href="/"
-                className="inline-flex items-center text-xs sm:text-sm text-white/70 hover:text-white mb-4"
-              >
-                ← Back to home
-              </Link>
+    // ✅ only change: remove outer “background wrapper” layers and use the same clean client container
+    <div className="max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 py-8">
+      <Link
+        href="/"
+        className="inline-flex items-center text-xs sm:text-sm text-white/70 hover:text-white mb-4"
+      >
+        ← Back to home
+      </Link>
 
-              <div className="grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 xl:gap-12">
-                {/* MAIN ARTICLE */}
-                <article className="space-y-5">
-                  <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/40">
-                    {heroImageUrl ? (
-                      <div className="relative w-full aspect-[16/9]">
-                        <Image
-                          src={heroImageUrl}
-                          alt={data.title || "Article image"}
-                          fill
-                          sizes="(min-width: 1200px) 900px, 100vw"
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="relative w-full aspect-[16/9] flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black text-xs text-white/50">
-                        No cover image
-                      </div>
-                    )}
-                  </div>
-
-                  <header className="space-y-3">
-                    {/* date on the left, share on the right */}
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] sm:text-xs uppercase tracking-wide text-white/60">
-                        {publishedDate}
-                        {updatedDate && updatedDate !== publishedDate && (
-                          <>
-                            {" / "}
-                            <span className="normal-case text-white/70">
-                              updated {updatedDate}
-                            </span>
-                          </>
-                        )}
-                      </p>
-                      <ShareButtons url={articleUrl} title={articleTitle} />
-                    </div>
-
-                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-tight break-words">
-                      {data.title}
-                    </h1>
-
-                    {data.subtitle && (
-                      <p className="text-base sm:text-lg text-white/80 break-words whitespace-pre-line">
-                        {data.subtitle}
-                      </p>
-                    )}
-                  </header>
-
-                  <section className="mt-2 space-y-3">
-                    {blocks.length === 0 ? (
-                      <p className="text-sm text-white/70">
-                        No article content has been added yet.
-                      </p>
-                    ) : (
-                      blocks.map((block, idx) => renderBlock(block, idx))
-                    )}
-                  </section>
-
-                  {/* AUTHOR CARD AT BOTTOM */}
-                  {(authorName || authorRole || reviewedBy) && (
-                    <section className="mt-8">
-                      <div className="border-t border-white/10 pt-6">
-                        <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3">
-                          <div className="relative w-12 h-12 rounded-full overflow-hidden border border-white/40 flex-shrink-0">
-                            <Image
-                              src={authorAvatar}
-                              alt={authorName || "Author"}
-                              fill
-                              sizes="48px"
-                              className="object-cover"
-                            />
-                          </div>
-
-                          <div className="flex flex-col text-sm min-w-0">
-                            {authorName && (
-                              <span className="font-semibold leading-tight">
-                                By {authorName}
-                              </span>
-                            )}
-                            {authorRole && (
-                              <span className="text-xs text-white/60 leading-tight">
-                                {authorRole}
-                              </span>
-                            )}
-                            <span className="mt-1 text-[11px] text-white/50">
-                              Published on {publishedDate}
-                            </span>
-                            {reviewedBy && (
-                              <span className="mt-1 text-[11px] text-white/50">
-                                Reviewed by {reviewedBy}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </section>
-                  )}
-                </article>
-
-                {/* SIDEBAR DESKTOP (hidden on mobile) */}
-                <aside className="hidden space-y-6 lg:block">
-                  {moreStories.length > 0 && (
-                    <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                        More stories
-                      </h2>
-                      <div className="space-y-3">
-                        {moreStories.map((s) => (
-                          <Link
-                            key={s.id}
-                            href={`/news/${s.slug || s.id}`}
-                            className="flex gap-3 group"
-                          >
-                            <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
-                              {s.img ? (
-                                <Image
-                                  src={s.img as string}
-                                  alt={s.title}
-                                  fill
-                                  sizes="80px"
-                                  className="object-cover group-hover:scale-105 transition-transform"
-                                />
-                              ) : (
-                                <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white/40 border border-dashed border-white/20">
-                                  No image
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                                {s.title}
-                              </p>
-                              {s.subtitle && (
-                                <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                  {s.subtitle}
-                                </p>
-                              )}
-                            </div>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {sidebarRatings.length > 0 && (
-                    <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                      <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                        Latest ratings
-                      </h2>
-                      <div className="space-y-3">
-                        {sidebarRatings.map((r) => (
-                          <div
-                            key={r.id}
-                            className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
-                          >
-                            <div className="relative w-16 h-16 flex-shrink-0">
-                              <Image
-                                src={r.img}
-                                alt={r.game_title}
-                                fill
-                                sizes="64px"
-                                className="object-cover"
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0 py-2 pr-3">
-                              <p className="text-xs font-semibold line-clamp-2">
-                                {r.game_title}
-                              </p>
-                              {r.subtitle && (
-                                <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                  {r.subtitle}
-                                </p>
-                              )}
-                            </div>
-                            <div className="px-2 pr-3">
-                              <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
-                                {r.score.toFixed(1)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </aside>
+      <div className="grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 xl:gap-12">
+        {/* MAIN ARTICLE */}
+        <article className="space-y-5">
+          <div className="rounded-2xl overflow-hidden border border-white/10 bg-black/40">
+            {heroImageUrl ? (
+              <div className="relative w-full aspect-[16/9]">
+                <Image
+                  src={heroImageUrl}
+                  alt={data.title || "Article image"}
+                  fill
+                  sizes="(min-width: 1200px) 900px, 100vw"
+                  className="object-cover"
+                />
               </div>
+            ) : (
+              <div className="relative w-full aspect-[16/9] flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black text-xs text-white/50">
+                No cover image
+              </div>
+            )}
+          </div>
 
-              {/* SIDEBAR MOBILE */}
-              <div className="mt-8 space-y-6 lg:hidden">
-                {moreStories.length > 0 && (
-                  <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                      More stories
-                    </h2>
-                    <div className="space-y-3">
-                      {moreStories.map((s) => (
-                        <Link
-                          key={s.id}
-                          href={`/news/${s.slug || s.id}`}
-                          className="flex gap-3 group"
-                        >
-                          <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
-                            {s.img ? (
-                              <Image
-                                src={s.img as string}
-                                alt={s.title}
-                                fill
-                                sizes="80px"
-                                className="object-cover group-hover:scale-105 transition-transform"
-                              />
-                            ) : (
-                              <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white/40 border border-dashed border-white/20">
-                                No image
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
-                              {s.title}
-                            </p>
-                            {s.subtitle && (
-                              <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                {s.subtitle}
-                              </p>
-                            )}
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
+          <header className="space-y-3">
+            {/* date on the left, share on the right */}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] sm:text-xs uppercase tracking-wide text-white/60">
+                {publishedDate}
+                {updatedDate && updatedDate !== publishedDate && (
+                  <>
+                    {" / "}
+                    <span className="normal-case text-white/70">
+                      updated {updatedDate}
+                    </span>
+                  </>
                 )}
+              </p>
+              <ShareButtons url={articleUrl} title={articleTitle} />
+            </div>
 
-                {sidebarRatings.length > 0 && (
-                  <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
-                    <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
-                      Latest ratings
-                    </h2>
-                    <div className="space-y-3">
-                      {sidebarRatings.map((r) => (
-                        <div
-                          key={r.id}
-                          className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
-                        >
-                          <div className="relative w-16 h-16 flex-shrink-0">
-                            <Image
-                              src={r.img}
-                              alt={r.game_title}
-                              fill
-                              sizes="64px"
-                              className="object-cover"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0 py-2 pr-3">
-                            <p className="text-xs font-semibold line-clamp-2">
-                              {r.game_title}
-                            </p>
-                            {r.subtitle && (
-                              <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
-                                {r.subtitle}
-                              </p>
-                            )}
-                          </div>
-                          <div className="px-2 pr-3">
-                            <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
-                              {r.score.toFixed(1)}
-                            </span>
-                          </div>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-tight break-words">
+              {data.title}
+            </h1>
+
+            {data.subtitle && (
+              <p className="text-base sm:text-lg text-white/80 break-words whitespace-pre-line">
+                {data.subtitle}
+              </p>
+            )}
+          </header>
+
+          <section className="mt-2 space-y-3">
+            {blocks.length === 0 ? (
+              <p className="text-sm text-white/70">
+                No article content has been added yet.
+              </p>
+            ) : (
+              blocks.map((block, idx) => renderBlock(block, idx))
+            )}
+          </section>
+
+          {/* AUTHOR CARD AT BOTTOM */}
+          {(authorName || authorRole || reviewedBy) && (
+            <section className="mt-8">
+              <div className="border-t border-white/10 pt-6">
+                <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3">
+                  <div className="relative w-12 h-12 rounded-full overflow-hidden border border-white/40 flex-shrink-0">
+                    <Image
+                      src={authorAvatar}
+                      alt={authorName || "Author"}
+                      fill
+                      sizes="48px"
+                      className="object-cover"
+                    />
+                  </div>
+
+                  <div className="flex flex-col text-sm min-w-0">
+                    {authorName && (
+                      <span className="font-semibold leading-tight">
+                        By {authorName}
+                      </span>
+                    )}
+                    {authorRole && (
+                      <span className="text-xs text-white/60 leading-tight">
+                        {authorRole}
+                      </span>
+                    )}
+                    <span className="mt-1 text-[11px] text-white/50">
+                      Published on {publishedDate}
+                    </span>
+                    {reviewedBy && (
+                      <span className="mt-1 text-[11px] text-white/50">
+                        Reviewed by {reviewedBy}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+        </article>
+
+        {/* SIDEBAR DESKTOP (hidden on mobile) */}
+        <aside className="hidden space-y-6 lg:block">
+          {moreStories.length > 0 && (
+            <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
+              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
+                More stories
+              </h2>
+              <div className="space-y-3">
+                {moreStories.map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/news/${s.slug || s.id}`}
+                    className="flex gap-3 group"
+                  >
+                    <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
+                      {s.img ? (
+                        <Image
+                          src={s.img as string}
+                          alt={s.title}
+                          fill
+                          sizes="80px"
+                          className="object-cover group-hover:scale-105 transition-transform"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white/40 border border-dashed border-white/20">
+                          No image
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
+                        {s.title}
+                      </p>
+                      {s.subtitle && (
+                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
+                          {s.subtitle}
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                ))}
               </div>
             </div>
-          </div>
-        </div>
-      </main>
+          )}
 
-      <footer className="bg-navbar border-t border-border text-foreground text-center py-4 text-xs sm:text-sm font-medium">
-        © {new Date().getFullYear()} GameLink — Built with ❤️ using Next.js
-      </footer>
+          {sidebarRatings.length > 0 && (
+            <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
+              <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
+                Latest ratings
+              </h2>
+              <div className="space-y-3">
+                {sidebarRatings.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
+                  >
+                    <div className="relative w-16 h-16 flex-shrink-0">
+                      <Image
+                        src={r.img}
+                        alt={r.game_title}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0 py-2 pr-3">
+                      <p className="text-xs font-semibold line-clamp-2">
+                        {r.game_title}
+                      </p>
+                      {r.subtitle && (
+                        <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
+                          {r.subtitle}
+                        </p>
+                      )}
+                    </div>
+                    <div className="px-2 pr-3">
+                      <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
+                        {r.score.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* SIDEBAR MOBILE */}
+      <div className="mt-8 space-y-6 lg:hidden">
+        {moreStories.length > 0 && (
+          <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
+              More stories
+            </h2>
+            <div className="space-y-3">
+              {moreStories.map((s) => (
+                <Link
+                  key={s.id}
+                  href={`/news/${s.slug || s.id}`}
+                  className="flex gap-3 group"
+                >
+                  <div className="relative w-20 h-14 rounded-md overflow-hidden bg-black/40 flex-shrink-0">
+                    {s.img ? (
+                      <Image
+                        src={s.img as string}
+                        alt={s.title}
+                        fill
+                        sizes="80px"
+                        className="object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white/40 border border-dashed border-white/20">
+                        No image
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold line-clamp-2 group-hover:text-white">
+                      {s.title}
+                    </p>
+                    {s.subtitle && (
+                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
+                        {s.subtitle}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {sidebarRatings.length > 0 && (
+          <div className="bg-black/25 rounded-2xl border border-white/10 p-4">
+            <h2 className="text-sm font-semibold mb-3 tracking-wide uppercase text-white/80">
+              Latest ratings
+            </h2>
+            <div className="space-y-3">
+              {sidebarRatings.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex gap-3 items-center bg-black/40 rounded-xl overflow-hidden border border-white/10"
+                >
+                  <div className="relative w-16 h-16 flex-shrink-0">
+                    <Image
+                      src={r.img}
+                      alt={r.game_title}
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 py-2 pr-3">
+                    <p className="text-xs font-semibold line-clamp-2">
+                      {r.game_title}
+                    </p>
+                    {r.subtitle && (
+                      <p className="text-[11px] text-white/60 line-clamp-2 mt-0.5">
+                        {r.subtitle}
+                      </p>
+                    )}
+                  </div>
+                  <div className="px-2 pr-3">
+                    <span className="inline-flex items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold px-2 py-1">
+                      {r.score.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

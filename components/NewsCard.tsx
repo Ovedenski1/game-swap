@@ -7,14 +7,23 @@ export type NewsItem = {
   id: number | string;
   title: string;
   img: string;
-  href?: string;      // where to go on click (e.g. /news/123 or external URL)
-  badge?: string;     // for rating like "9.5"
-  subtitle?: string;  // short description
+  href?: string;
+  badge?: string;
+  subtitle?: string;
   isSpoiler?: boolean;
 };
 
 type NewsCardProps = {
   item: NewsItem;
+
+  /**
+   * "aspect" = old behavior (16:9 height based on width) ✅ default
+   * "fill"   = fill the parent height (useful for Naruto grid) ✅ fixes the weird 2nd card
+   */
+  mediaMode?: "aspect" | "fill";
+
+  /** optional extra classes for the <article> */
+  className?: string;
 };
 
 const MAX_SUBTITLE_CHARS = 140;
@@ -25,9 +34,13 @@ function truncate(text: string | undefined, maxLength = MAX_SUBTITLE_CHARS) {
   return text.slice(0, maxLength).trimEnd() + "…";
 }
 
-export default function NewsCard({ item }: NewsCardProps) {
+export default function NewsCard({
+  item,
+  mediaMode = "aspect",
+  className = "",
+}: NewsCardProps) {
   const router = useRouter();
-  const { title, img, href, badge, subtitle, isSpoiler  } = item;
+  const { title, img, href, badge, subtitle, isSpoiler } = item;
   const shortSubtitle = truncate(subtitle);
   const clickable = Boolean(href);
 
@@ -44,58 +57,60 @@ export default function NewsCard({ item }: NewsCardProps) {
 
   return (
     <article
-      data-interactive="true"           // 👈 important for the scroller
+      data-interactive="true"
       onClick={handleClick}
       className={[
         "relative h-full overflow-hidden rounded-2xl border border-white/10 bg-black/40",
         clickable ? "cursor-pointer" : "",
+        className,
       ].join(" ")}
     >
-      <div className="relative aspect-[16/9]">
-  {/* ⭐ SPOILER TAG */}
-  {isSpoiler && (
-    <div className="absolute right-3 top-3 z-10 rounded-full bg-red-600/90 backdrop-blur px-3 py-1 text-[10px] font-bold shadow-lg shadow-red-600/40">
-  SPOILER
-</div>
-  )}
-
-    {/* ⭐ BADGE (score) – same style as rating page */}
-  {badge && (
-    <div className="absolute right-3 top-3 z-10">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-sm font-bold text-white shadow-[0_0_30px_rgba(248,113,113,0.7)]">
-        {(() => {
-          const n = Number(badge);
-          return Number.isFinite(n) ? n.toFixed(1) : badge;
-        })()}
-      </div>
-    </div>
-  )}
-
-
-  <Image
-    src={img}
-    alt={title}
-    fill
-    sizes="(min-width: 1024px) 420px, (min-width: 640px) 360px, 50vw"
-    className="object-cover transition-transform duration-300 hover:scale-105"
-  />
-
-  <div className="pointer-events-none absolute inset-x-0 bottom-0">
-    <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent">
-      <div className="pointer-events-auto px-4 pb-4 pt-3">
-        <h3 className="text-base font-semibold leading-tight line-clamp-2">
-          {title}
-        </h3>
-        {shortSubtitle && (
-          <p className="mt-1 text-sm text-white/80 line-clamp-3">
-            {shortSubtitle}
-          </p>
+      <div className={mediaMode === "fill" ? "relative h-full" : "relative aspect-[16/9]"}>
+        {/* ⭐ SPOILER TAG */}
+        {isSpoiler && (
+          <div className="absolute right-3 top-3 z-10 rounded-full bg-red-600/90 backdrop-blur px-3 py-1 text-[10px] font-bold shadow-lg shadow-red-600/40">
+            SPOILER
+          </div>
         )}
-      </div>
-    </div>
-  </div>
-</div>
 
+        {/* ⭐ BADGE (score) */}
+        {badge && (
+          <div className="absolute right-3 top-3 z-10">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-sm font-bold text-white shadow-[0_0_30px_rgba(248,113,113,0.7)]">
+              {(() => {
+                const n = Number(badge);
+                return Number.isFinite(n) ? n.toFixed(1) : badge;
+              })()}
+            </div>
+          </div>
+        )}
+
+        <Image
+          src={img}
+          alt={title}
+          fill
+          sizes="(min-width: 1024px) 420px, (min-width: 640px) 360px, 50vw"
+          className={[
+            "object-cover transition-transform duration-300",
+            clickable ? "hover:scale-105" : "",
+          ].join(" ")}
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-0">
+          <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent">
+            <div className="pointer-events-auto px-4 pb-4 pt-3">
+              <h3 className="text-base font-semibold leading-tight line-clamp-2">
+                {title}
+              </h3>
+              {shortSubtitle && (
+                <p className="mt-1 text-sm text-white/80 line-clamp-3">
+                  {shortSubtitle}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </article>
   );
 }

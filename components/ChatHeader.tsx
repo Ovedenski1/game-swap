@@ -19,15 +19,18 @@ export default function ChatHeader({ user, swap }: ChatHeaderProps) {
   const router = useRouter();
 
   return (
-    <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+    <div className="bg-surface-elevated/70 backdrop-blur border-b border-border px-4 sm:px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <button
             onClick={() => router.back()}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+            className="p-2 rounded-full hover:bg-white/10 transition-colors duration-200"
+            aria-label="Back"
+            title="Back"
+            type="button"
           >
             <svg
-              className="w-6 h-6 text-gray-600 dark:text-gray-400"
+              className="w-6 h-6 text-white/70"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -42,31 +45,34 @@ export default function ChatHeader({ user, swap }: ChatHeaderProps) {
           </button>
 
           <div className="flex items-center space-x-3">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden border border-white/10 bg-black/20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={user.avatar_url}
-                alt={user.full_name}
+                src={user.avatar_url || "/default.jpg"}
+                alt={user.full_name || "User"}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full" />
+              <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-surface-elevated rounded-full" />
             </div>
 
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {user.full_name}, {calculateAge(user.birthdate)}
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-semibold text-foreground truncate">
+                {user.full_name}
+                {user.birthdate ? `, ${calculateAge(user.birthdate)}` : ""}
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                @{user.username}
+
+              <p className="text-sm text-text-muted truncate">
+                @{user.username || "user"}
               </p>
 
               {swap && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   You liked{" "}
-                  <span className="font-semibold">
+                  <span className="font-semibold text-foreground">
                     {swap.theirWantedGames?.length ?? 0}
                   </span>{" "}
                   of their games, and they liked{" "}
-                  <span className="font-semibold">
+                  <span className="font-semibold text-foreground">
                     {swap.myWantedGames?.length ?? 0}
                   </span>{" "}
                   of yours.

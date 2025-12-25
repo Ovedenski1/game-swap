@@ -7,30 +7,13 @@ import {
   passUser,
   type PotentialMatch,
 } from "@/lib/actions/matches";
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { UserProfile } from "../profile/page";
 import { useRouter } from "next/navigation";
 import MatchCard from "@/components/MatchCard";
 import MatchNotification from "@/components/MatchNotification";
 import { ChevronLeft } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-
-/* ---------- Page shell with attached footer ---------- */
-function PageShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex-1 flex flex-col bg-background text-white">
-      <main className="flex-1 flex">
-        <div className="flex-1 max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 flex">
-          <div className="flex-1 bg-surface ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] rounded-b-3xl flex flex-col">
-            <div className="p-4 sm:p-6 lg:px-8 lg:py-8 flex-1 flex flex-col">
-              {children}
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
 
 export default function MatchesPage() {
   const router = useRouter();
@@ -44,16 +27,13 @@ export default function MatchesPage() {
 
   /* ---------- Auth guard + load candidates ---------- */
   useEffect(() => {
-    // still figuring out if user is logged in → do nothing yet
     if (authLoading) return;
 
-    // not logged in → go to /auth and do NOT fetch matches
     if (!user) {
       router.replace("/auth");
       return;
     }
 
-    // logged in → fetch matches
     async function loadUsers() {
       try {
         const data = await getPotentialMatches();
@@ -117,64 +97,80 @@ export default function MatchesPage() {
     router.push(`/chat/${matchedUser.id}`);
   }
 
-  /* ---------- While auth is loading ---------- */
-  if (authLoading) {
-    return (
-      <PageShell>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#C6FF00] mx-auto" />
-            <p className="mt-4 text-white/70">Checking your session…</p>
-          </div>
-        </div>
-      </PageShell>
-    );
-  }
+  const isBusy = authLoading || loading;
 
-  /* ---------- Loading matches ---------- */
-  if (loading) {
-    return (
-      <PageShell>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#C6FF00] mx-auto" />
-            <p className="mt-4 text-white/70">Finding your matches…</p>
-          </div>
-        </div>
-      </PageShell>
-    );
-  }
+  return (
+    <div className="max-w-[1500px] mx-auto px-3 sm:px-6 lg:px-4 py-6 sm:py-8">
+      {/* Header (client style) */}
+      <header className="text-center">
+        <div className="mx-auto mb-3 h-[2px] w-16 rounded-full bg-bronze/80" />
 
-  /* ---------- No more profiles ---------- */
-  if (currentIndex >= potentialMatches.length) {
-    return (
-      <PageShell>
-        <div className="flex flex-col flex-1">
-          <header className="flex items-center gap-3 mb-4">
-            <button
-              onClick={() => router.back()}
-              className="inline-flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition"
-              title="Back"
-              aria-label="Back"
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center justify-center rounded-md border border-white/15 bg-black/20 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-white/90 hover:bg-black/30 transition"
+            title="Back"
+            aria-label="Back"
+            type="button"
+          >
+            <ChevronLeft size={18} />
+            Back
+          </button>
+
+          <div className="min-w-0">
+            <h1
+              className={[
+                "text-3xl sm:text-4xl lg:text-5xl font-extrabold uppercase",
+                "tracking-tight text-foreground leading-none",
+                "[text-shadow:0_2px_0_rgba(0,0,0,0.35)]",
+              ].join(" ")}
             >
-              <ChevronLeft size={20} />
-            </button>
-            <div className="flex-1 text-center">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                Swap Games
-              </h1>
-            </div>
-            <span className="w-9" />
-          </header>
+              Swap Games
+            </h1>
 
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <h2 className="mt-2 text-2xl font-semibold">
-              No more profiles to show
-            </h2>
-            <p className="mt-2 text-sm text-white/60">
-              Try again later or adjust your platform filters in your profile.
-            </p>
+            {!isBusy && potentialMatches.length > 0 && currentIndex < potentialMatches.length && (
+              <p className="mt-3 text-xs sm:text-sm text-text-muted">
+                {currentIndex + 1} of {potentialMatches.length} profiles
+              </p>
+            )}
+
+            {isBusy && (
+              <p className="mt-3 text-xs sm:text-sm text-text-muted">
+                {authLoading ? "Checking your session…" : "Finding your matches…"}
+              </p>
+            )}
           </div>
+
+          {/* keep title centered */}
+          <div className="w-[72px] sm:w-[80px]" />
+        </div>
+      </header>
+
+      <div className="mt-7 h-px w-full bg-border/40" />
+
+      {/* Body */}
+      {authLoading ? (
+        <div className="mt-10 grid place-items-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#C6FF00] mx-auto" />
+            <p className="mt-4 text-sm text-text-muted">Checking your session…</p>
+          </div>
+        </div>
+      ) : loading ? (
+        <div className="mt-10 grid place-items-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#C6FF00] mx-auto" />
+            <p className="mt-4 text-sm text-text-muted">Finding your matches…</p>
+          </div>
+        </div>
+      ) : currentIndex >= potentialMatches.length ? (
+        <div className="mt-6 rounded-2xl border border-border bg-surface/40 shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-8 text-center">
+          <h2 className="text-xl sm:text-2xl font-semibold">
+            No more profiles to show
+          </h2>
+          <p className="mt-2 text-sm text-text-muted">
+            Try again later or adjust your platform filters in your profile.
+          </p>
 
           {showMatchNotification && matchedUser && (
             <MatchNotification
@@ -184,55 +180,24 @@ export default function MatchesPage() {
             />
           )}
         </div>
-      </PageShell>
-    );
-  }
-
-  /* ---------- Current card ---------- */
-  const currentPotentialMatch = potentialMatches[currentIndex];
-
-  return (
-    <PageShell>
-      <div className="flex flex-col flex-1">
-        <header className="flex items-center gap-3 mb-4">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition"
-            title="Back"
-            aria-label="Back"
-          >
-            <ChevronLeft size={20} />
-          </button>
-
-          <div className="flex-1 text-center">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Swap Games
-            </h1>
-            <p className="mt-1 text-sm text-white/60">
-              {currentIndex + 1} of {potentialMatches.length} profiles
-            </p>
-          </div>
-
-          <span className="w-9" />
-        </header>
-
-        <div className="flex-1 flex items-start justify-center mt-2 sm:mt-4">
+      ) : (
+        <div className="mt-6 flex items-start justify-center">
           <MatchCard
-            user={currentPotentialMatch.user}
-            games={currentPotentialMatch.games}
+            user={potentialMatches[currentIndex].user}
+            games={potentialMatches[currentIndex].games}
             onLike={handleLike}
             onPass={handlePass}
           />
-        </div>
 
-        {showMatchNotification && matchedUser && (
-          <MatchNotification
-            match={matchedUser}
-            onClose={handleCloseMatchNotification}
-            onStartChat={handleStartChat}
-          />
-        )}
-      </div>
-    </PageShell>
+          {showMatchNotification && matchedUser && (
+            <MatchNotification
+              match={matchedUser}
+              onClose={handleCloseMatchNotification}
+              onStartChat={handleStartChat}
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }

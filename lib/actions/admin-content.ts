@@ -4,6 +4,10 @@
 import { createClient } from "../supabase/server";
 import type { NewsItem } from "@/components/NewsCard";
 
+/* =========================================================================
+ * TYPES
+ * =======================================================================*/
+
 export type RatingItem = {
   id: string;
   game_title: string;
@@ -17,6 +21,36 @@ export type HeroSlideItem = {
   id: string;
   img: string;
   title: string | null;
+  link_url: string | null;
+};
+
+export type PlayersGameOfMonthItem = {
+  id: string;
+  position: number; // 1..5
+  title: string | null;
+  image_url: string | null;
+  link_url: string | null;
+
+  total_votes: number | null;
+  votes_link_url: string | null;
+
+  month_label?: string | null;
+};
+
+/** ✅ Upcoming Games (calendar image REMOVED) */
+export type UpcomingGameItem = {
+  id: string;
+  year: number; // e.g. 2026
+  month: number; // 1..12, 13 = TBA
+  day: number | null; // only day number; null allowed
+  title: string;
+  studio: string | null;
+  platforms: string[] | null;
+  link_url: string | null;
+
+  details_html: string | null;
+  sort_order: number;
+  created_at?: string | null;
 };
 
 /* ---------- helpers ---------- */
@@ -30,12 +64,6 @@ function slugify(input: string): string {
     .replace(/-+/g, "-");
 }
 
-/**
- * Make sure a slug is unique inside a given table.
- * If the slug already exists, it will append -2, -3, ... etc.
- *
- * Example: "fallout-4", "fallout-4-2", "fallout-4-3"
- */
 async function ensureUniqueSlug(
   supabase: any,
   table: "ratings" | "top_stories",
@@ -49,31 +77,19 @@ async function ensureUniqueSlug(
   let suffix = 1;
 
   while (true) {
-    let query = supabase
-      .from(table)
-      .select("id")
-      .eq("slug", candidate)
-      .limit(1);
-
-    if (currentId != null) {
-      query = query.neq("id", currentId);
-    }
+    let query = supabase.from(table).select("id").eq("slug", candidate).limit(1);
+    if (currentId != null) query = query.neq("id", currentId);
 
     const { data, error } = await query;
 
     if (error) {
       console.error("ensureUniqueSlug error", error);
-      // fall back to candidate; DB unique constraint will still protect us
       return candidate;
     }
 
-    if (!data || data.length === 0) {
-      // no conflict → safe to use
-      return candidate;
-    }
+    if (!data || data.length === 0) return candidate;
 
-    // conflict → try with suffix
-    suffix += 1; // first conflict becomes -2
+    suffix += 1;
     candidate = `${base}-${suffix}`;
   }
 }
@@ -112,6 +128,42 @@ function mapHeroRow(row: any): HeroSlideItem {
     id: String(row.id),
     img: row.image_url as string,
     title: (row.title as string | null) ?? null,
+    link_url: (row.link_url as string | null) ?? null,
+  };
+}
+
+function mapPlayersGameRow(row: any): PlayersGameOfMonthItem {
+  return {
+    id: String(row.id),
+    position: Number(row.position),
+    title: (row.title as string | null) ?? null,
+    image_url: (row.image_url as string | null) ?? null,
+    link_url: (row.link_url as string | null) ?? null,
+    total_votes:
+      row.total_votes === null || row.total_votes === undefined
+        ? null
+        : Number(row.total_votes),
+    votes_link_url: (row.votes_link_url as string | null) ?? null,
+    month_label: (row.month_label as string | null) ?? null,
+  };
+}
+
+function mapUpcomingGameRow(row: any): UpcomingGameItem {
+  return {
+    id: String(row.id),
+    year: Number(row.year),
+    month: Number(row.month),
+    day: row.day === null || row.day === undefined ? null : Number(row.day),
+    title: String(row.title ?? ""),
+    studio: (row.studio as string | null) ?? null,
+    platforms: (row.platforms as string[] | null) ?? null,
+    link_url: (row.link_url as string | null) ?? null,
+    details_html: (row.details_html as string | null) ?? null,
+    sort_order:
+      row.sort_order === null || row.sort_order === undefined
+        ? 0
+        : Number(row.sort_order),
+    created_at: (row.created_at as string | null) ?? null,
   };
 }
 
@@ -124,9 +176,7 @@ export async function adminGetTopStories(): Promise<NewsItem[]> {
 
   const { data, error } = await supabase
     .from("top_stories")
-    .select(
-      "id, slug, title, subtitle, summary, image_url, link_url, created_at",
-    )
+    .select("id, slug, title, subtitle, summary, image_url, link_url, created_at")
     .order("created_at", { ascending: false });
 
   if (error || !data) {
@@ -136,8 +186,6 @@ export async function adminGetTopStories(): Promise<NewsItem[]> {
 
   return data.map(mapStoryRow);
 }
-
-/* --------- TYPES for create/update story (with SEO + author) --------- */
 
 export type AdminStoryInput = {
   title: string;
@@ -152,37 +200,26 @@ export type AdminStoryInput = {
   metaTitle?: string | null;
   metaDescription?: string | null;
 
-  // author stuff
   authorName?: string | null;
   authorRole?: string | null;
   authorAvatarUrl?: string | null;
   reviewedBy?: string | null;
 
-  // spoiler flag
   isSpoiler?: boolean;
 };
 
-/**
- * contentBlocks is OPTIONAL so the old simple admin form still works.
- */
 export async function adminCreateStory(input: AdminStoryInput) {
   const supabase = await createClient();
-
   const baseTitle = (input.title || "").trim();
 
-  // 1) create base slug (either from input.slug or from title)
   const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  // 2) make sure it is unique in "top_stories"
-  const effectiveSlug = await ensureUniqueSlug(
-    supabase,
-    "top_stories",
-    baseSlug,
-  );
+  const effectiveSlug = await ensureUniqueSlug(supabase, "top_stories", baseSlug);
 
   const effectiveMetaTitle =
     (input.metaTitle && input.metaTitle.trim()) || baseTitle || null;
+
   const effectiveMetaDescription =
     input.metaDescription && input.metaDescription.trim()
       ? input.metaDescription.trim()
@@ -197,9 +234,7 @@ export async function adminCreateStory(input: AdminStoryInput) {
       subtitle: input.subtitle ?? null,
       body: input.body ?? null,
       extra_images:
-        input.extraImages && input.extraImages.length
-          ? input.extraImages
-          : null,
+        input.extraImages && input.extraImages.length ? input.extraImages : null,
       content_blocks:
         input.contentBlocks && input.contentBlocks.length
           ? input.contentBlocks
@@ -215,9 +250,7 @@ export async function adminCreateStory(input: AdminStoryInput) {
 
       is_spoiler: input.isSpoiler ?? false,
     })
-    .select(
-      "id, slug, title, subtitle, summary, image_url, link_url, created_at",
-    )
+    .select("id, slug, title, subtitle, summary, image_url, link_url, created_at")
     .single();
 
   if (error || !data) {
@@ -230,14 +263,11 @@ export async function adminCreateStory(input: AdminStoryInput) {
 
 export async function adminUpdateStory(id: string, input: AdminStoryInput) {
   const supabase = await createClient();
-
   const baseTitle = (input.title || "").trim();
 
-  // 1) create base slug
   const baseSlug =
     (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  // 2) ensure unique, but ignore this current row's id
   const effectiveSlug = await ensureUniqueSlug(
     supabase,
     "top_stories",
@@ -247,6 +277,7 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
 
   const effectiveMetaTitle =
     (input.metaTitle && input.metaTitle.trim()) || baseTitle || null;
+
   const effectiveMetaDescription =
     input.metaDescription && input.metaDescription.trim()
       ? input.metaDescription.trim()
@@ -261,9 +292,7 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
       subtitle: input.subtitle ?? null,
       body: input.body ?? null,
       extra_images:
-        input.extraImages && input.extraImages.length
-          ? input.extraImages
-          : null,
+        input.extraImages && input.extraImages.length ? input.extraImages : null,
       content_blocks:
         input.contentBlocks && input.contentBlocks.length
           ? input.contentBlocks
@@ -280,9 +309,7 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
       is_spoiler: input.isSpoiler ?? false,
     })
     .eq("id", id)
-    .select(
-      "id, slug, title, subtitle, summary, image_url, link_url, created_at",
-    )
+    .select("id, slug, title, subtitle, summary, image_url, link_url, created_at")
     .single();
 
   if (error || !data) {
@@ -296,71 +323,16 @@ export async function adminUpdateStory(id: string, input: AdminStoryInput) {
 export async function adminDeleteStory(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("top_stories").delete().eq("id", id);
-
   if (error) {
     console.error("adminDeleteStory error:", error);
     throw new Error(error?.message || "Failed to delete story");
   }
 }
 
-// Type for the full story returned for editing
-export type AdminStoryForEdit = {
-  id: string | number;
-  title: string;
-  subtitle: string | null;
-  img: string;
-  href: string | null;
-  slug: string | null;
-  meta_title: string | null;
-  meta_description: string | null;
-  body: string | null;
-  extra_images: string[] | null;
-  content_blocks: unknown; // stored JSON (our blocks)
-};
-
-/**
- * Load a single story for the visual editor.
- */
-export async function adminGetStoryForEdit(
-  id: string,
-): Promise<AdminStoryForEdit | null> {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("top_stories")
-    .select(
-      "id, title, subtitle, image_url, link_url, slug, meta_title, meta_description, body, extra_images, content_blocks",
-    )
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    console.error("adminGetStoryForEdit error", error);
-    throw new Error(error.message);
-  }
-
-  if (!data) return null;
-
-  return {
-    id: data.id,
-    title: data.title,
-    subtitle: data.subtitle,
-    img: data.image_url,
-    href: data.link_url,
-    slug: data.slug,
-    meta_title: data.meta_title,
-    meta_description: data.meta_description,
-    body: data.body,
-    extra_images: data.extra_images,
-    content_blocks: data.content_blocks,
-  };
-}
-
 /* =========================================================================
  * RATINGS
  * =======================================================================*/
 
-// IGN-style full rating input
 export type AdminRatingInput = {
   game_title: string;
   img: string;
@@ -408,20 +380,12 @@ export async function adminGetRatings(): Promise<RatingItem[]> {
 
 export async function adminCreateRating(input: AdminRatingInput) {
   const supabase = await createClient();
-
   const baseTitle = (input.game_title || "").trim();
 
-  // 1) base slug from input or title
   const baseSlug =
-    (input.slug && input.slug.trim()) ||
-    (baseTitle ? slugify(baseTitle) : null);
+    (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  // 2) ensure unique in "ratings"
-  const effectiveSlug = await ensureUniqueSlug(
-    supabase,
-    "ratings",
-    baseSlug,
-  );
+  const effectiveSlug = await ensureUniqueSlug(supabase, "ratings", baseSlug);
 
   const { data, error } = await supabase
     .from("ratings")
@@ -430,7 +394,6 @@ export async function adminCreateRating(input: AdminRatingInput) {
       image_url: input.img,
       score: input.score,
       summary: input.subtitle ?? input.summary ?? null,
-
       slug: effectiveSlug,
 
       developer: input.developer ?? null,
@@ -463,26 +426,14 @@ export async function adminCreateRating(input: AdminRatingInput) {
   return mapRatingRow(data);
 }
 
-export async function adminUpdateRating(
-  id: string,
-  input: AdminRatingInput,
-) {
+export async function adminUpdateRating(id: string, input: AdminRatingInput) {
   const supabase = await createClient();
-
   const baseTitle = (input.game_title || "").trim();
 
-  // 1) base slug from input or title
   const baseSlug =
-    (input.slug && input.slug.trim()) ||
-    (baseTitle ? slugify(baseTitle) : null);
+    (input.slug && input.slug.trim()) || (baseTitle ? slugify(baseTitle) : null);
 
-  // 2) ensure unique, ignoring this rating's own id
-  const effectiveSlug = await ensureUniqueSlug(
-    supabase,
-    "ratings",
-    baseSlug,
-    id,
-  );
+  const effectiveSlug = await ensureUniqueSlug(supabase, "ratings", baseSlug, id);
 
   const { data, error } = await supabase
     .from("ratings")
@@ -491,7 +442,6 @@ export async function adminUpdateRating(
       image_url: input.img,
       score: input.score,
       summary: input.subtitle ?? input.summary ?? null,
-
       slug: effectiveSlug,
 
       developer: input.developer ?? null,
@@ -528,7 +478,6 @@ export async function adminUpdateRating(
 export async function adminDeleteRating(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("ratings").delete().eq("id", id);
-
   if (error) {
     console.error("adminDeleteRating error:", error);
     throw new Error(error?.message || "Failed to delete rating");
@@ -536,7 +485,7 @@ export async function adminDeleteRating(id: string) {
 }
 
 /* =========================================================================
- * HERO SLIDES (carousel)
+ * HERO SLIDES
  * =======================================================================*/
 
 export async function adminGetHeroSlides(): Promise<HeroSlideItem[]> {
@@ -544,7 +493,7 @@ export async function adminGetHeroSlides(): Promise<HeroSlideItem[]> {
 
   const { data, error } = await supabase
     .from("hero_slides")
-    .select("id, image_url, title, created_at")
+    .select("id, image_url, title, link_url, created_at")
     .order("created_at", { ascending: false });
 
   if (error || !data) {
@@ -558,6 +507,7 @@ export async function adminGetHeroSlides(): Promise<HeroSlideItem[]> {
 export async function adminCreateHeroSlide(input: {
   img: string;
   title?: string;
+  link_url?: string;
 }) {
   const supabase = await createClient();
 
@@ -566,8 +516,9 @@ export async function adminCreateHeroSlide(input: {
     .insert({
       image_url: input.img,
       title: input.title ?? null,
+      link_url: input.link_url ?? null,
     })
-    .select("id, image_url, title, created_at")
+    .select("id, image_url, title, link_url, created_at")
     .single();
 
   if (error || !data) {
@@ -580,7 +531,7 @@ export async function adminCreateHeroSlide(input: {
 
 export async function adminUpdateHeroSlide(
   id: string,
-  input: { img: string; title?: string },
+  input: { img: string; title?: string; link_url?: string },
 ) {
   const supabase = await createClient();
 
@@ -589,9 +540,10 @@ export async function adminUpdateHeroSlide(
     .update({
       image_url: input.img,
       title: input.title ?? null,
+      link_url: input.link_url ?? null,
     })
     .eq("id", id)
-    .select("id, image_url, title, created_at")
+    .select("id, image_url, title, link_url, created_at")
     .single();
 
   if (error || !data) {
@@ -605,9 +557,228 @@ export async function adminUpdateHeroSlide(
 export async function adminDeleteHeroSlide(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("hero_slides").delete().eq("id", id);
-
   if (error) {
     console.error("adminDeleteHeroSlide error:", error);
     throw new Error(error?.message || "Failed to delete hero slide");
+  }
+}
+
+/* =========================================================================
+ * PLAYERS GAME OF THE MONTH
+ * =======================================================================*/
+
+export async function adminGetPlayersGameOfMonth(): Promise<
+  PlayersGameOfMonthItem[]
+> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("players_game_of_month")
+    .select(
+      "id, position, title, image_url, link_url, total_votes, votes_link_url, month_label, created_at",
+    )
+    .order("position", { ascending: true });
+
+  if (error || !data) {
+    console.error("adminGetPlayersGameOfMonth error:", error);
+    return [];
+  }
+
+  return data.map(mapPlayersGameRow);
+}
+
+export type AdminPlayersGameOfMonthInput = {
+  position: number; // 1..5
+  title?: string | null;
+  image_url?: string | null;
+  link_url?: string | null;
+  total_votes?: number | null;
+  votes_link_url?: string | null;
+  month_label?: string | null;
+};
+
+export async function adminUpsertPlayersGameOfMonth(
+  input: AdminPlayersGameOfMonthInput,
+): Promise<PlayersGameOfMonthItem> {
+  const supabase = await createClient();
+
+  const payload = {
+    position: input.position,
+    title: input.title ?? null,
+    image_url: input.image_url ?? null,
+    link_url: input.link_url ?? null,
+    total_votes: input.total_votes ?? null,
+    votes_link_url: input.votes_link_url ?? null,
+    month_label: input.month_label ?? null,
+  };
+
+  const { data, error } = await supabase
+    .from("players_game_of_month")
+    .upsert(payload, { onConflict: "position" })
+    .select(
+      "id, position, title, image_url, link_url, total_votes, votes_link_url, month_label, created_at",
+    )
+    .single();
+
+  if (error || !data) {
+    console.error("adminUpsertPlayersGameOfMonth error:", error);
+    throw new Error(error?.message || "Failed to save Players game of the month");
+  }
+
+  return mapPlayersGameRow(data);
+}
+
+export async function adminDeletePlayersGameOfMonth(
+  input: string | { id?: string | null; position?: number | null },
+) {
+  const supabase = await createClient();
+
+  if (typeof input === "string") {
+    const { error } = await supabase
+      .from("players_game_of_month")
+      .delete()
+      .eq("id", input);
+    if (error)
+      throw new Error(
+        error?.message || "Failed to delete Players game of the month item",
+      );
+    return;
+  }
+
+  const id = input?.id ?? null;
+  const position = input?.position ?? null;
+
+  if (id) {
+    const { error } = await supabase
+      .from("players_game_of_month")
+      .delete()
+      .eq("id", id);
+    if (error)
+      throw new Error(
+        error?.message || "Failed to delete Players game of the month item",
+      );
+    return;
+  }
+
+  if (typeof position === "number") {
+    const { error } = await supabase
+      .from("players_game_of_month")
+      .delete()
+      .eq("position", position);
+    if (error)
+      throw new Error(
+        error?.message || "Failed to delete Players game of the month item",
+      );
+    return;
+  }
+
+  throw new Error("Delete requires an id or position.");
+}
+
+/* =========================================================================
+ * ✅ UPCOMING GAMES (calendar image REMOVED)
+ * Table: upcoming_games
+ * Columns: id (uuid), year int, month int, day int null, title text,
+ *          studio text null, platforms text[] null, link_url text null,
+ *          details_html text null, sort_order int, created_at timestamptz
+ * =======================================================================*/
+
+export async function adminGetUpcomingGames(
+  year: number,
+): Promise<UpcomingGameItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("upcoming_games")
+    .select(
+      "id, year, month, day, title, studio, platforms, link_url, details_html, sort_order, created_at",
+    )
+    .eq("year", year)
+    .order("month", { ascending: true })
+    .order("sort_order", { ascending: true })
+    .order("day", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error || !data) {
+    console.error("adminGetUpcomingGames error:", error);
+    return [];
+  }
+
+  return data.map(mapUpcomingGameRow);
+}
+
+export type AdminUpcomingGameInput = {
+  id?: string | null;
+  year: number;
+  month: number; // 1..12, 13=TBA
+  day?: number | null;
+  title: string;
+  studio?: string | null;
+  platforms?: string[] | null;
+  link_url?: string | null;
+
+  details_html?: string | null;
+  sort_order?: number | null;
+};
+
+export async function adminUpsertUpcomingGame(
+  input: AdminUpcomingGameInput,
+): Promise<UpcomingGameItem> {
+  const supabase = await createClient();
+
+  const payload: any = {
+    year: Number(input.year),
+    month: Number(input.month),
+    day: input.day === undefined ? null : input.day,
+    title: (input.title || "").trim(),
+    studio: input.studio?.trim() || null,
+    platforms: input.platforms ?? null,
+    link_url: input.link_url?.trim() || null,
+
+    details_html: input.details_html ?? null,
+    sort_order: input.sort_order == null ? 0 : Number(input.sort_order),
+  };
+
+  if (!payload.title) throw new Error("Title is required.");
+
+  if (input.id) {
+    const { data, error } = await supabase
+      .from("upcoming_games")
+      .update(payload)
+      .eq("id", input.id)
+      .select(
+        "id, year, month, day, title, studio, platforms, link_url, details_html, sort_order, created_at",
+      )
+      .single();
+
+    if (error || !data) {
+      console.error("adminUpsertUpcomingGame(update) error:", error);
+      throw new Error(error?.message || "Failed to update upcoming game");
+    }
+    return mapUpcomingGameRow(data);
+  }
+
+  const { data, error } = await supabase
+    .from("upcoming_games")
+    .insert(payload)
+    .select(
+      "id, year, month, day, title, studio, platforms, link_url, details_html, sort_order, created_at",
+    )
+    .single();
+
+  if (error || !data) {
+    console.error("adminUpsertUpcomingGame(insert) error:", error);
+    throw new Error(error?.message || "Failed to create upcoming game");
+  }
+
+  return mapUpcomingGameRow(data);
+}
+
+export async function adminDeleteUpcomingGame(id: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("upcoming_games").delete().eq("id", id);
+  if (error) {
+    console.error("adminDeleteUpcomingGame error:", error);
+    throw new Error(error?.message || "Failed to delete upcoming game");
   }
 }

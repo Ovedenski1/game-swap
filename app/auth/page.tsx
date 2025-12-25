@@ -39,7 +39,7 @@ export default function AuthPage() {
 
         if (data.user && !data.session) {
           // email confirmation required
-          setError("Please check your email for a confirmation link.");
+          setError("Моля, провери имейла си за линк за потвърждение.");
           return;
         }
       } else {
@@ -53,94 +53,96 @@ export default function AuthPage() {
       // on success, Supabase auth listener in AuthProvider will update `user`
       router.push("/");
     } catch (err: any) {
-      setError(err.message || "Authentication failed.");
+      setError(err.message || "Неуспешна автентикация.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-pink-100 to-red-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="max-w-md w-full space-y-8 p-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            StreamMatch
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            {isSignUp ? "Create your account" : "Sign in to your account"}
-          </p>
-        </div>
-
-        <form className="space-y-6" onSubmit={handleAuth}>
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 
-                border border-gray-300 dark:border-gray-600 
-                rounded-md shadow-sm placeholder-gray-400 
-                dark:bg-gray-800 dark:text-white
-                focus:outline-none focus:border-2 focus:border-pink-500"
-              placeholder="Enter your email"
-            />
+    <div className="min-h-[calc(100vh-64px)] w-full px-3 sm:px-6 lg:px-4 py-10">
+      <div className="mx-auto max-w-md">
+        <div className="rounded-2xl border border-white/10 bg-black/35 shadow-[0_20px_70px_rgba(0,0,0,0.45)] overflow-hidden">
+          {/* Header */}
+          <div className="px-6 pt-7 pb-5 border-b border-white/10 bg-black/25">
+            
+            <p className="mt-1 text-sm text-white/65">
+              {isSignUp ? "Създай акаунт" : "Влез в профила си"}
+            </p>
           </div>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 
-                border border-gray-300 dark:border-gray-600 
-                rounded-md shadow-sm placeholder-gray-400 
-                dark:bg-gray-800 dark:text-white
-                focus:outline-none focus:border-2 focus:border-pink-500"
-              placeholder="Enter your password"
-            />
-          </div>
-
-          {error && (
-            <div className="text-red-600 dark:text-red-400 text-sm">
-              {error}
+          {/* Form */}
+          <form onSubmit={handleAuth} className="px-6 py-6 space-y-5">
+            <div className="space-y-1">
+              <label
+                htmlFor="email"
+                className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+              >
+                Имейл
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Въведи имейл"
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-lime-400/60 focus:ring-2 focus:ring-lime-400/20"
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-primary to-primary-soft hover:from-pink-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 disabled:opacity-50"
-          >
-            {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
-          </button>
-        </form>
+            <div className="space-y-1">
+              <label
+                htmlFor="password"
+                className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+              >
+                Парола
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Въведи парола"
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-lime-400/60 focus:ring-2 focus:ring-lime-400/20"
+              />
+            </div>
 
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => setIsSignUp((v) => !v)}
-            className="text-pink-600 dark:text-pink-400 hover:text-pink-500 dark:hover:text-pink-300 text-sm"
-          >
-            {isSignUp
-              ? "Already have an account? Sign in"
-              : "Don't have an account? Sign up"}
-          </button>
+            {error && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center rounded-full bg-news px-4 py-2.5 text-sm font-semibold text-black  hover:brightness-95 disabled:opacity-60"
+            >
+              {loading
+                ? "Моля, изчакай..."
+                : isSignUp
+                ? "Регистрация"
+                : "Вход"}
+            </button>
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => setIsSignUp((v) => !v)}
+                className="text-sm text-white/70 hover:text-white"
+              >
+                {isSignUp
+                  ? "Имаш акаунт? Влез"
+                  : "Нямаш акаунт? Регистрирай се"}
+              </button>
+            </div>
+
+            <p className="text-center text-[11px] text-white/35">
+              С натискане на бутона се съгласяваш с условията за ползване.
+            </p>
+          </form>
         </div>
       </div>
     </div>

@@ -12,56 +12,27 @@ import {
 export default async function AdminPage() {
   const supabase = await createClient();
 
-  // 1) Who is logged in?
+  // 1) Check user session
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError) {
-    console.error("[/admin] auth.getUser error:", userError);
-  }
+  if (userError) console.error("[/admin] auth.getUser error:", userError);
+  if (!user) redirect("/");
 
-  // Not logged in at all → home
-  if (!user) {
-    console.log("[/admin] no user, redirecting to /");
-    redirect("/");
-  }
-
-  // 2) Load is_admin for that user from public.users
-  const {
-    data: dbUser,
-    error: dbUserError,
-  } = await supabase
-    .from("users") // ✅ your table with is_admin
+  // 2) Verify admin
+  const { data: dbUser, error: dbUserError } = await supabase
+    .from("users")
     .select("id, is_admin")
     .eq("id", user.id)
     .single();
 
-  if (dbUserError) {
-    console.error("[/admin] users query error:", dbUserError);
-  } else {
-    console.log("[/admin] users row:", dbUser);
-  }
+  if (dbUserError) console.error("[/admin] users query error:", dbUserError);
+  const isAdmin = dbUser?.is_admin || user.user_metadata?.is_admin;
+  if (!isAdmin) redirect("/");
 
-  const isAdminFromDb = dbUser?.is_admin === true;
-
-  // Optional backup via auth metadata (not required if you don't use it)
-  const isAdminFromMetadata = user.user_metadata?.is_admin === true;
-
-  const isAdmin = isAdminFromDb || isAdminFromMetadata;
-
-  if (!isAdmin) {
-    console.log("[/admin] user is NOT admin, redirecting", {
-      userId: user.id,
-      email: user.email,
-      isAdminFromDb,
-      metaIsAdmin: user.user_metadata?.is_admin,
-    });
-    redirect("/");
-  }
-
-  // 3) User is admin → load dashboard data
+  // 3) Load dashboard data
   const [stories, ratings, heroSlides] = await Promise.all([
     adminGetTopStories(),
     adminGetRatings(),
@@ -69,24 +40,21 @@ export default async function AdminPage() {
   ]);
 
   return (
-    <div className="max-w-[1200px] mx-auto px-4 py-8 text-white">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+    <div className="flex flex-col min-h-screen bg-background text-white">
+      <main className="flex-1 flex flex-col">
+        <div className="max-w-[1200px] mx-auto px-4 py-8 flex-1 flex flex-col">
+          
 
-        {/* ✅ Step 3: Rentals inbox link */}
-        <a
-          href="/admin/rentals"
-          className="inline-flex items-center justify-center rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm font-semibold hover:bg-white/5"
-        >
-          Rentals
-        </a>
-      </div>
+          <AdminDashboard
+            initialStories={stories}
+            initialRatings={ratings}
+            initialHeroSlides={heroSlides}
+          />
+        </div>
+      </main>
 
-      <AdminDashboard
-        initialStories={stories}
-        initialRatings={ratings}
-        initialHeroSlides={heroSlides}
-      />
+      {/* Unified footer (matches profile layout) */}
+     
     </div>
   );
 }

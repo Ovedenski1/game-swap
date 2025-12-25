@@ -4,6 +4,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/contexts/auth-context";
+import { CheckCircle } from "lucide-react";
 
 export function NotificationListener() {
   const { user } = useAuth();
@@ -22,7 +23,6 @@ export function NotificationListener() {
       (user as any)?.user_metadata?.is_admin ||
       (user as any)?.profile?.is_admin;
 
-    // ✅ Subscribe to correct table for role
     const table = isAdmin ? "notifications_admin" : "notifications_user";
 
     const channel = supabase
@@ -33,12 +33,37 @@ export function NotificationListener() {
         (payload) => {
           const n = payload.new as any;
 
+          // 🧩 Single function to render a one-line toast
+          const showToast = (msg: string) => {
+            toast.custom(
+              () => (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "#1a1a1a",
+                    color: "#fff",
+                    borderRadius: "8px",
+                    padding: "10px 16px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+                    whiteSpace: "nowrap",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                  }}
+                >
+                  <CheckCircle size={18} color="#22c55e" />
+                  <span>{msg}</span>
+                </div>
+              ),
+              { duration: 4000 }
+            );
+          };
+
           if (isAdmin) {
-            toast.success(n.message || "🟢 New rental request received!", {
-              duration: 4000,
-            });
+            showToast(n.message || "New rental request received!");
           } else if (n.user_id === user.id) {
-            toast.success(n.message || "🎮 Rental update!", { duration: 4000 });
+            showToast(n.message || "Rental update!");
           }
         }
       )

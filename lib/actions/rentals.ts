@@ -2,8 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 
+/* ---------------- Types ---------------- */
 export type RentalGame = {
   id: string;
+  slug?: string | null;
   title: string;
   platform: string;
   description?: string | null;
@@ -12,6 +14,7 @@ export type RentalGame = {
   price_amount: number;
   total_copies: number;
   available_copies: number;
+  genres: string[];
   is_active: boolean;
   created_at: string;
 };
@@ -22,6 +25,11 @@ export type RentalRequest = {
   user_id: string;
   status: string;
   shipping_address: string;
+  delivery_type: "home" | "office";
+  phone_number: string;
+  first_name: string;
+  last_name: string;
+  city: string;
   notes: string | null;
   reserved_until: string | null;
   start_date: string | null;
@@ -40,11 +48,26 @@ export type RentalRequest = {
     full_name: string;
     username: string;
     email: string;
+    avatar_url: string;
   } | null;
 };
 
+/* ---------------- Helpers ---------------- */
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
 /* ---------------- Get Catalog ---------------- */
-export async function getRentalCatalog() {
+export async function getRentalCatalog(): Promise<RentalGame[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("rental_games")
@@ -54,37 +77,61 @@ export async function getRentalCatalog() {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as RentalGame[];
+
+  return (data ?? []).map((game) => ({
+    ...game,
+    genres: game.genres ?? [],
+  })) as RentalGame[];
 }
 
-/* ---------------- Single Game ---------------- */
-export async function getRentalGame(id: string) {
+/* ---------------- Single Game (Slug Only) ---------------- */
+export async function getRentalGame(idOrSlug: string): Promise<RentalGame | null> {
   const supabase = await createClient();
+  if (looksLikeUuid(idOrSlug)) return null;
+
   const { data, error } = await supabase
     .from("rental_games")
     .select("*")
-    .eq("id", id)
+    .eq("slug", idOrSlug)
     .maybeSingle();
 
   if (error) throw error;
-  return data as RentalGame | null;
+  if (!data) return null;
+
+  return {
+    ...data,
+    genres: data.genres ?? [],
+  } as RentalGame;
 }
 
 /* ---------------- User: Create Request ---------------- */
-export async function createRentalRequest(gameId: string, shippingAddress: string, notes?: string) {
+export async function createRentalRequest(
+  gameId: string,
+  shippingAddress: string,
+  deliveryType: "home" | "office",
+  phoneNumber: string,
+  firstName: string,
+  lastName: string,
+  city: string,
+  notes?: string
+) {
   const supabase = await createClient();
 
-  // 1️⃣ Create the rental request using your existing DB function
   const { data, error } = await supabase.rpc("create_rental_request", {
     p_rental_game_id: gameId,
     p_shipping_address: shippingAddress,
+    p_delivery_type: deliveryType,
+    p_phone_number: phoneNumber,
+    p_first_name: firstName,
+    p_last_name: lastName,
+    p_city: city,
     p_notes: notes ?? null,
   });
 
-  if (error) throw error;
+  if (error) throw new Error(error.message || "Failed to create rental request.");
+
   const rentalRequestId = data as string;
 
-  // 2️⃣ Fetch details for notifications
   const { data: gameData } = await supabase
     .from("rental_games")
     .select("title, platform")
@@ -94,25 +141,19 @@ export async function createRentalRequest(gameId: string, shippingAddress: strin
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
 
-  const requesterName =
-    (user?.user_metadata?.full_name || user?.email || "A user").split("@")[0];
-  const gameTitle = gameData?.title || "a game";
-
-  // 3️⃣ Notify the user about their own request
   await supabase.from("notifications_user").insert([
     {
       user_id: user?.id,
       title: "Rental request created",
-      message: `Your rental request for ${gameTitle} was submitted!`,
+      message: `Your rental request for ${gameData?.title} was submitted!`,
       link: "/profile/my-rentals",
     },
   ]);
 
-  // 4️⃣ Notify admin separately
   await supabase.from("notifications_admin").insert([
     {
       title: "New rental request",
-      message: `${requesterName} requested ${gameTitle}`,
+      message: `${user?.email || "User"} requested ${gameData?.title}`,
       link: "/admin/rentals",
     },
   ]);
@@ -121,7 +162,7 @@ export async function createRentalRequest(gameId: string, shippingAddress: strin
 }
 
 /* ---------------- Admin: Get All Requests ---------------- */
-export async function adminGetRentalRequests() {
+export async function adminGetRentalRequests(): Promise<RentalRequest[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -132,6 +173,11 @@ export async function adminGetRentalRequests() {
       user_id,
       status,
       shipping_address,
+      city,
+      delivery_type,
+      phone_number,
+      first_name,
+      last_name,
       notes,
       reserved_until,
       start_date,
@@ -147,7 +193,8 @@ export async function adminGetRentalRequests() {
       user:users!rental_requests_user_id_fkey (
         full_name,
         username,
-        email
+        email,
+        avatar_url
       )
     `)
     .order("created_at", { ascending: false });
@@ -170,28 +217,73 @@ export async function adminUpdateRentalStatus(requestId: string, status: string)
     p_request_id: requestId,
     p_status: status,
   });
+
   if (error) throw error;
 
-  // 🔔 Notify user about status change
   if (request?.user_id) {
-    let msg = "";
-    if (status === "approved") msg = "Your rental was approved!";
-    else if (status === "shipped") msg = "Your rental has been shipped.";
-    else if (status === "returned") msg = "Rental marked as returned.";
-    else if (status === "rejected") msg = "Your rental was rejected.";
-    else if (status === "cancelled") msg = "Your rental was cancelled.";
-
-    if (msg) {
-      await supabase.from("notifications_user").insert([
-        {
-          user_id: request.user_id,
-          title: "Rental update",
-          message: msg,
-          link: "/profile/my-rentals",
-        },
-      ]);
-    }
+    await supabase.from("notifications_user").insert([
+      {
+        user_id: request.user_id,
+        title: "Rental update",
+        message: `Your rental status changed to ${status}.`,
+        link: "/profile/my-rentals",
+      },
+    ]);
   }
 
   return true;
+}
+
+/* ---------------- Admin: Create new rental game ---------------- */
+export async function adminCreateRentalGame(formData: FormData) {
+  const supabase = await createClient();
+
+  const title = formData.get("title") as string;
+  const platform = formData.get("platform") as string;
+  const totalCopies = Number(formData.get("total_copies"));
+  const priceAmount = Number(formData.get("price_amount"));
+  const genres = formData.getAll("genres") as string[];
+  const description = (formData.get("description") as string) || ""; // ✅ Added
+  const coverFile = formData.get("cover") as File | null;
+
+  const slug = slugify(title);
+  let coverUrl: string | null = null;
+
+  if (coverFile) {
+    const fileName = `${Date.now()}_${coverFile.name}`;
+    const fileBuffer = Buffer.from(await coverFile.arrayBuffer());
+
+    const { data, error } = await supabase.storage
+      .from("rental_covers")
+      .upload(fileName, fileBuffer, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: coverFile.type || "image/jpeg",
+      });
+
+    if (error) throw new Error("Failed to upload cover image.");
+
+    const { data: publicUrl } = supabase.storage
+      .from("rental_covers")
+      .getPublicUrl(data.path);
+
+    coverUrl = publicUrl.publicUrl;
+  }
+
+  const { error } = await supabase.from("rental_games").insert({
+    title,
+    slug,
+    platform,
+    description, // ✅ Added
+    total_copies: totalCopies,
+    available_copies: totalCopies,
+    price_amount: priceAmount,
+    price_type: priceAmount === 0 ? "free" : "paid",
+    genres,
+    is_active: true,
+    cover_url: coverUrl,
+  });
+
+  if (error) throw new Error(error.message);
+  return { success: true };
 }

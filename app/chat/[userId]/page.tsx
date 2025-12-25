@@ -22,7 +22,6 @@ export default function ChatConversationPage({
 }: {
   params: Promise<{ userId: string }>;
 }) {
-  // ✅ Next 15 params unwrap
   const { userId } = use(params);
   const matchIdFromUrl = userId;
 
@@ -31,8 +30,6 @@ export default function ChatConversationPage({
   const [chats, setChats] = useState<ChatData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<ChatData | null>(null);
-
-  /* ---------- helpers ---------- */
 
   function normalizeChats(raw: any[]): ChatData[] {
     const chatData: ChatData[] = raw.map((item) => ({
@@ -46,7 +43,7 @@ export default function ChatConversationPage({
     chatData.sort(
       (a, b) =>
         new Date(b.lastMessageTime).getTime() -
-        new Date(a.lastMessageTime).getTime(),
+        new Date(a.lastMessageTime).getTime()
     );
 
     return chatData;
@@ -55,26 +52,16 @@ export default function ChatConversationPage({
   function formatTime(timestamp: string) {
     const date = new Date(timestamp);
     const now = new Date();
-    const diffInHours =
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
 
     if (isNaN(diffInHours)) return "";
-
-    if (diffInHours < 1) {
-      return "Just now";
-    } else if (diffInHours < 24) {
-      return date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } else if (diffInHours < 48) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString();
+    if (diffInHours < 1) return "Just now";
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
+    if (diffInHours < 48) return "Yesterday";
+    return date.toLocaleDateString();
   }
-
-  /* ---------- initial load of chats ---------- */
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +74,6 @@ export default function ChatConversationPage({
         const normalized = normalizeChats(chatSummaries);
         setChats(normalized);
 
-        // pick initial chat based on URL
         const found =
           normalized.find((c) => c.id === matchIdFromUrl) ||
           normalized[0] ||
@@ -110,8 +96,6 @@ export default function ChatConversationPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---------- polling to keep sidebar in sync ---------- */
-
   useEffect(() => {
     if (!authUser) return;
 
@@ -123,15 +107,10 @@ export default function ChatConversationPage({
         if (cancelled) return;
 
         const normalized = normalizeChats(chatSummaries);
-
-        // always update the list
         setChats(normalized);
 
-        // ✅ only refresh data for the *already selected* chat,
-        //    NEVER auto-switch to the first one
         if (selectedChat) {
-          const fresh =
-            normalized.find((c) => c.id === selectedChat.id) || null;
+          const fresh = normalized.find((c) => c.id === selectedChat.id) || null;
           setSelectedChat(fresh);
         }
       } catch (err) {
@@ -147,7 +126,6 @@ export default function ChatConversationPage({
     };
   }, [authUser, selectedChat?.id]);
 
-  /* ---------- when you send a message in the open chat ---------- */
   function handleLastMessageUpdate({
     matchId,
     content,
@@ -162,19 +140,14 @@ export default function ChatConversationPage({
 
       const updated = prev.map((chat) =>
         chat.id === matchId
-          ? {
-              ...chat,
-              lastMessage: content,
-              lastMessageTime: createdAt,
-              // you're the one sending, so unreadCount stays as-is (0)
-            }
-          : chat,
+          ? { ...chat, lastMessage: content, lastMessageTime: createdAt }
+          : chat
       );
 
       updated.sort(
         (a, b) =>
           new Date(b.lastMessageTime).getTime() -
-          new Date(a.lastMessageTime).getTime(),
+          new Date(a.lastMessageTime).getTime()
       );
 
       return updated;
@@ -183,11 +156,9 @@ export default function ChatConversationPage({
     setSelectedChat((prev) =>
       prev && prev.id === matchId
         ? { ...prev, lastMessage: content, lastMessageTime: createdAt }
-        : prev,
+        : prev
     );
   }
-
-  /* ---------- mark selected chat as read in DB ---------- */
 
   useEffect(() => {
     if (!selectedChat) return;
@@ -208,120 +179,118 @@ export default function ChatConversationPage({
 
     markRead();
 
-    // also clear unread locally
     setChats((prev) =>
-      prev.map((c) =>
-        c.id === matchId ? { ...c, unreadCount: 0 } : c,
-      ),
+      prev.map((c) => (c.id === matchId ? { ...c, unreadCount: 0 } : c))
     );
   }, [selectedChat]);
 
-  /* ---------- RENDER ---------- */
-
   return (
-    <div className="flex-1 flex min-h-0 bg-gradient-to-br from-pink-50 to-red-50 dark:from-gray-900 dark:to-gray-800 overflow-hidden">
-      <div className="flex flex-1 min-h-0 max-w-6xl mx-auto rounded-none md:rounded-2xl bg-background shadow-lg overflow-hidden">
-        {/* LEFT: chat list */}
-        <aside className="hidden md:flex w-80 border-r border-gray-800 bg-[#050818] flex-col">
-          <div className="px-4 py-3 border-b border-gray-800">
-            <h1 className="text-lg font-semibold text-white">Messages</h1>
-            <p className="text-xs text-gray-400">
-              {chats.length} conversation{chats.length !== 1 ? "s" : ""}
-            </p>
-          </div>
+    <div className="max-w-[1500px] mx-auto px-3 sm:px-6 lg:px-4 py-6 sm:py-8">
+      {/* ✅ keep the internal chat sizing EXACT (min-h-0 is critical) */}
+      <div className="rounded-2xl border border-border bg-surface/40 shadow-[0_20px_60px_rgba(0,0,0,0.35)] overflow-hidden">
+        <div className="p-4 sm:p-6 lg:p-8">
+          {/* ✅ this wrapper must keep min-h-0 / flex-1 to not break StreamChatInterface */}
+          <div className="flex w-full min-h-[70vh] min-h-0 rounded-none md:rounded-2xl bg-background shadow-lg overflow-hidden">
+            <aside className="hidden md:flex w-80 border-r border-border bg-surface-elevated flex-col">
 
-          <div className="flex-1 overflow-y-auto chat-scrollbar">
-            {!loading && chats.length === 0 && (
-              <div className="p-4 text-sm text-gray-400">
-                No conversations yet. Start matching to chat!
+              <div className="px-4 py-3 border-b border-gray-800">
+                <h1 className="text-lg font-semibold text-white">Messages</h1>
+                <p className="text-xs text-gray-400">
+                  {chats.length} conversation{chats.length !== 1 ? "s" : ""}
+                </p>
               </div>
-            )}
 
-            {!loading &&
-              chats.map((chat) => {
-                const isActive = selectedChat?.id === chat.id;
-                const isUnread = chat.unreadCount > 0;
+              <div className="flex-1 overflow-y-auto chat-scrollbar">
+                {!loading && chats.length === 0 && (
+                  <div className="p-4 text-sm text-gray-400">
+                    No conversations yet. Start matching to chat!
+                  </div>
+                )}
 
-                return (
-                  <button
-                    key={chat.id}
-                    type="button"
-                    onClick={() => {
-                      // immediately clear unread locally
-                      setSelectedChat({ ...chat, unreadCount: 0 });
-                      setChats((prev) =>
-                        prev.map((c) =>
-                          c.id === chat.id ? { ...c, unreadCount: 0 } : c,
-                        ),
-                      );
-                    }}
-                    className={`w-full flex items-center px-4 py-3 text-left border-b border-gray-800/60 transition ${
-                      isUnread
-                        ? "bg-[#2b1120] hover:bg-[#3b162b]" // 🔴 reddish for NEW
-                        : isActive
-                        ? "bg-gray-800/60 hover:bg-gray-800/80"
-                        : "hover:bg-gray-800/40"
-                    }`}
-                  >
-                    <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
-                      <img
-                        src={chat.user.avatar_url || "/default.jpg"}
-                        alt={chat.user.full_name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
+                {!loading &&
+                  chats.map((chat) => {
+                    const isActive = selectedChat?.id === chat.id;
+                    const isUnread = chat.unreadCount > 0;
 
-                    <div className="ml-3 flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-white truncate">
-                          {chat.user.full_name}
-                        </span>
-                        <span className="ml-2 text-[11px] text-gray-400 flex-shrink-0">
-                          {formatTime(chat.lastMessageTime)}
-                        </span>
-                      </div>
-
-                      {/* Show NEW MESSAGE label when unread */}
-                      <p
-                        className={`text-xs truncate ${
+                    return (
+                      <button
+                        key={chat.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedChat({ ...chat, unreadCount: 0 });
+                          setChats((prev) =>
+                            prev.map((c) =>
+                              c.id === chat.id ? { ...c, unreadCount: 0 } : c
+                            )
+                          );
+                        }}
+                        className={`w-full flex items-center px-4 py-3 text-left border-b border-gray-800/60 transition ${
                           isUnread
-                            ? "text-pink-200 font-semibold"
-                            : "text-gray-400"
+                            ? "bg-[#2b1120] hover:bg-[#3b162b]"
+                            : isActive
+                            ? "bg-gray-800/60 hover:bg-gray-800/80"
+                            : "hover:bg-gray-800/40"
                         }`}
                       >
-                        {isUnread ? "New message" : chat.lastMessage}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+                        <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={chat.user.avatar_url || "/default.jpg"}
+                            alt={chat.user.full_name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        <div className="ml-3 flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-white truncate">
+                              {chat.user.full_name}
+                            </span>
+                            <span className="ml-2 text-[11px] text-gray-400 flex-shrink-0">
+                              {formatTime(chat.lastMessageTime)}
+                            </span>
+                          </div>
+
+                          <p
+                            className={`text-xs truncate ${
+                              isUnread
+                                ? "text-pink-200 font-semibold"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            {isUnread ? "New message" : chat.lastMessage}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </aside>
+
+            {/* ✅ keep these exact bg classes (StreamChat + header rely on it visually) */}
+            <section className="flex-1 flex flex-col min-h-0 bg-background">
+              {!selectedChat ? (
+                <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
+                  {loading ? " " : "Select a conversation from the list on the left."}
+                </div>
+              ) : (
+                <>
+                  <div className="sticky top-0 z-10 bg-background">
+                    <ChatHeader user={selectedChat.user} />
+                  </div>
+
+                  <div className="flex-1 min-h-0">
+                    <StreamChatInterface
+                      otherUser={selectedChat.user}
+                      matchId={selectedChat.id}
+                      onLastMessageUpdate={handleLastMessageUpdate}
+                    />
+                  </div>
+                </>
+              )}
+            </section>
           </div>
-        </aside>
-
-        {/* RIGHT: selected chat */}
-        <section className="flex-1 flex flex-col min-h-0 bg-background">
-          {!selectedChat ? (
-            <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
-              {loading
-                ? " "
-                : "Select a conversation from the list on the left."}
-            </div>
-          ) : (
-            <>
-              <div className="sticky top-0 z-10 bg-background">
-                <ChatHeader user={selectedChat.user} />
-              </div>
-
-              <div className="flex-1 min-h-0">
-                <StreamChatInterface
-                  otherUser={selectedChat.user}
-                  matchId={selectedChat.id}
-                  onLastMessageUpdate={handleLastMessageUpdate}
-                />
-              </div>
-            </>
-          )}
-        </section>
+        </div>
       </div>
     </div>
   );

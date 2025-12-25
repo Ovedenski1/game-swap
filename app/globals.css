@@ -1,118 +1,197 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* ====== GLOBAL COLOR VARIABLES (anime style) ====== */
+@custom-variant dark (&:is(.dark *));
 
+/* =========================
+   RESET
+========================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* If your scrolling is inside <main> (ClientLayout), keep this.
+   If your pages stopped scrolling, set this to: overflow: auto; */
+body {
+  overflow: auto;
+}
+
+/* =========================
+   YOUR APP THEME (PALETTE)
+   + shadcn tokens
+========================= */
 :root {
-  /* main app background + text */
-  --background: #06081f;       /* deep navy */
-  --foreground: #e5e7f5;       /* soft light text */
+  /* =========================
+     PALETTE NAMES (your image)
+  ========================= */
+  --vintage-grape: #44355b;
+  --midnight-violet: #31263e;
+  --shadow-grey: #221e22;
+  --honey-bronze: #eca72c;
+  --spicy-paprika: #ee5622;
 
-  /* cards / panels / borders */
-  --surface: #13162b;
-  --surface-soft: #191d32;
-  --border: #272a45;
+  /* =========================
+     SEMANTIC ROLES (use these)
+  ========================= */
+  --background: var(--shadow-grey);
+  --foreground: #ffffff;
 
-   /* NEW: navbar + footer strip colors */
-  --navbar: #0a0d2a;   /* slightly darker band at top */
-  --footer: #050618;   /* very dark band at bottom */
+  /* Surfaces */
+  --surface: var(--midnight-violet);
+  --surface-soft: rgba(49, 38, 62, 0.6);
+  --surface-elevated: var(--vintage-grape);
 
-  /* accents */
-  --accent-primary: #ff4fa3;   /* pink */
-  --accent-primary-soft: #ff76b8;
-  --accent-purple: #5b4fff;
-  --accent-green: #24e38a;
-  --accent-yellow: #ffc857;
-  --accent-red: #ff4f6e;
+  /* Layout areas */
+  --navbar: rgba(68, 53, 91, 0.92);
+  --footer: var(--shadow-grey);
 
-  --text-soft: #b5b9d9;
-  --text-muted: #7b80a8;
+  /* Text */
+  --text-soft: rgba(255, 255, 255, 0.88);
+  --text-muted: rgba(255, 255, 255, 0.65);
+
+  /* Accents */
+  --accent-primary: var(--honey-bronze);
+  --accent-secondary: rgba(236, 167, 44, 0.18);
+
+  /* Danger / Alerts */
+  --destructive: var(--spicy-paprika);
+  --destructive-foreground: #ffffff;
+
+  /* Section-specific role (what you asked for) */
+  --news: var(--spicy-paprika);
+
+  /* Border/radius */
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --radius: 0.75rem;
+
+  /* ===== shadcn required tokens ===== */
+  --card: rgba(49, 38, 62, 0.55);
+  --card-foreground: var(--foreground);
+
+  --popover: rgba(34, 30, 34, 0.96);
+  --popover-foreground: var(--foreground);
+
+  --primary: var(--accent-primary);
+  --primary-foreground: #1a1417; /* dark text on bronze */
+
+  --secondary: rgba(68, 53, 91, 0.35);
+  --secondary-foreground: var(--foreground);
+
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: var(--text-muted);
+
+  --accent: rgba(236, 167, 44, 0.16);
+  --accent-foreground: var(--foreground);
+
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: rgba(236, 167, 44, 0.55);
+
+  /* Optional chart/sidebar tokens */
+  --chart-1: var(--honey-bronze);
+  --chart-2: var(--vintage-grape);
+  --chart-3: rgba(255, 255, 255, 0.9);
+  --chart-4: rgba(49, 38, 62, 0.95);
+  --chart-5: var(--spicy-paprika);
+
+  --sidebar: rgba(68, 53, 91, 0.55);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--honey-bronze);
+  --sidebar-primary-foreground: #1a1417;
+  --sidebar-accent: rgba(236, 167, 44, 0.14);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
-/* Optional: light mode by OS setting.
-   If you want ONLY dark mode, you can delete this block. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --background: #ffffff;
-    --foreground: #171717;
-    --surface: #f8fafc;
-    --surface-soft: #e5e7eb;
-    --border: #d4d4d8;
-    --text-soft: #4b5563;
-    --text-muted: #6b7280;
-  }
-}
-
-/* ====== Tailwind theme tokens (no extra config file) ====== */
-
+/* Tailwind v4 CSS-first tokens mapping */
 @theme inline {
+  /* Existing semantic tokens */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
   --color-surface: var(--surface);
   --color-surface-soft: var(--surface-soft);
+  --color-surface-elevated: var(--surface-elevated);
+
   --color-border: var(--border);
 
-  --color-navbar: var(--navbar);   /* 👈 add this */
-  --color-footer: var(--footer);   /* 👈 and this */
-
-  --color-primary: var(--accent-primary);
-  --color-primary-soft: var(--accent-primary-soft);
-  --color-purple: var(--accent-purple);
-  --color-green: var(--accent-green);
-  --color-yellow: var(--accent-yellow);
-  --color-red: var(--accent-red);
+  --color-navbar: var(--navbar);
+  --color-footer: var(--footer);
 
   --color-text-soft: var(--text-soft);
   --color-text-muted: var(--text-muted);
+
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* =========================
+     NEW: Named palette colors
+     (now you can use bg-paprika etc.)
+  ========================= */
+  --color-grape: var(--vintage-grape);
+  --color-violet: var(--midnight-violet);
+  --color-shadow: var(--shadow-grey);
+  --color-bronze: var(--honey-bronze);
+  --color-paprika: var(--spicy-paprika);
+
+  /* NEW: role alias for a section */
+  --color-news: var(--news);
+
+  /* Radius tokens */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
 }
 
-/* ====== base body ====== */
-
+/* =========================
+   BASE STYLES (NO @apply)
+========================= */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-/* ====== your custom utilities (kept) ====== */
-
-@layer components {
-  .card-swipe {
-    @apply relative overflow-hidden rounded-2xl shadow-lg bg-surface text-foreground;
-  }
-
-  .match-button {
-    @apply bg-gradient-to-r from-primary to-primary-soft text-white font-semibold py-3 px-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-200;
-  }
-
-  .chat-container {
-    @apply bg-surface-soft rounded-lg shadow-sm border border-border;
-  }
-
-  .chat-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: #d1d5db transparent;
-  }
-  .chat-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-  .chat-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .chat-scrollbar::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 3px;
-  }
-  .chat-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
-  }
+/* Toast position (keep) */
+#react-hot-toast,
+[data-rht-toaster] {
+  position: fixed !important;
+  z-index: 999999 !important;
+  top: 85px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none !important;
 }
 
-
-
-/* === thin horizontal scrollbar === */
-
+/* Scrollbars (keep) */
 .thin-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
@@ -131,7 +210,6 @@ body {
   background-color: #94a3b8;
 }
 
-/* hide scrollbar */
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -140,22 +218,269 @@ body {
   display: none;
 }
 
-#react-hot-toast {
-  position: fixed !important;
-  z-index: 999999 !important;
-  top: 80px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  pointer-events: none !important;
+/* Game description scrollbar (keep) */
+.description-scroll::-webkit-scrollbar {
+  width: 8px;
 }
-/* ======== Force react-hot-toast visibility (v4 selector) ======== */
-[data-rht-toaster] {
-  position: fixed !important;
-  z-index: 999999 !important;
-  top: 85px !important;
-  left: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  transform: translateX(-50%) !important;
-  pointer-events: none !important;
+.description-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+.description-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.05)
+  );
+  border-radius: 9999px;
+  transition: background 0.3s ease;
+}
+.description-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.15)
+  );
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+.description-scroll {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+}
+/* -------------------------------------------------------
+   Score badge base
+------------------------------------------------------- */
+.score-badge {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+
+  font-weight: 800;
+  font-size: 14px;
+
+  /* base shadow */
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.score-badge__text {
+  position: relative;
+  z-index: 5;
+}
+
+/* -------------------------------------------------------
+   Tiers
+------------------------------------------------------- */
+.score-badge--bronze {
+  background: #b87333;
+  color: #111;
+}
+
+.score-badge--silver {
+  background: #cfd2d6;
+  color: #111;
+}
+
+.score-badge--gold {
+  background: #f3d05e;
+  color: #111;
+}
+
+/* Diamond (10): purple + depth */
+.score-badge--diamond {
+  color: #fff;
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 35%, #22d3ee 100%);
+  outline: 2px solid rgba(255, 255, 255, 0.18);
+  outline-offset: -2px;
+}
+
+/* -------------------------------------------------------
+   Diamond texture (facets + grain)
+------------------------------------------------------- */
+.score-badge--diamond::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  z-index: 1;
+  pointer-events: none;
+
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.16) 0px,
+      rgba(255, 255, 255, 0.16) 1px,
+      transparent 1px,
+      transparent 7px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.05) 0px,
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(circle at 28% 30%, rgba(255,255,255,0.45), transparent 45%),
+    radial-gradient(circle at 70% 78%, rgba(0,0,0,0.28), transparent 55%);
+
+  mix-blend-mode: overlay;
+  opacity: 0.9;
+}
+
+/* -------------------------------------------------------
+   GOLD shine sweep (FAST + thin stripe)
+   - no big blob, no circle
+------------------------------------------------------- */
+@keyframes goldShineFast {
+  0%   { transform: translateX(-160%) rotate(18deg); opacity: 0; }
+  10%  { opacity: 0.9; }
+  35%  { transform: translateX(160%) rotate(18deg); opacity: 0.9; }
+  45%  { opacity: 0; }
+  100% { transform: translateX(160%) rotate(18deg); opacity: 0; }
+}
+
+.score-badge--gold::after {
+  content: "";
+  position: absolute;
+  top: -60%;
+  bottom: -60%;
+  left: 50%;
+  width: 10px;               /* ✅ thin stripe */
+  border-radius: 9999px;
+  z-index: 3;
+  pointer-events: none;
+
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(255,255,255,0.15) 25%,
+    rgba(255,255,255,0.55) 50%,
+    rgba(255,255,255,0.15) 75%,
+    transparent 100%
+  );
+
+  filter: blur(0.3px);       /* ✅ minimal blur (no blob) */
+  transform: translateX(-160%) rotate(18deg);
+  animation: goldShineFast 3.8s ease-in-out infinite; /* ✅ faster */
+}
+
+/* -------------------------------------------------------
+   DIAMOND pulse glow (OBVIOUS)
+   - pulses brightness + outer glow
+------------------------------------------------------- */
+@keyframes diamondPulse {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.02);
+    filter: brightness(2);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.02);
+    filter: brightness(3);
+    opacity: 1;
+  }
+  90% {
+    transform: scale(1.02);
+    filter: brightness(2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    opacity: 0.6;
+  }
+}
+
+/* glow layer */
+.score-badge--diamond::after {
+  content: "";
+  position: absolute;
+  inset: -8px;               /* ✅ bigger glow */
+  border-radius: 9999px;
+  z-index: 2;
+  pointer-events: none;
+
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(121, 5, 230, 0.65),
+    rgba(170, 7, 202, 0.486) 55%,
+    transparent 72%
+  );
+
+  animation: diamondPulse 10s ease-in-out infinite; /* ✅ visible pulse */
+}
+
+/* also pulse the badge shadow (makes it 100% noticeable) */
+.score-badge--diamond {
+  animation: diamondShadowPulse 2.6s ease-in-out infinite;
+}
+
+@keyframes diamondShadowPulse {
+  0% {
+    box-shadow:
+      0 10px 28px rgba(0,0,0,0.55),
+      0 0 0 rgba(168,85,247,0),
+      0 0 0 rgba(34,211,238,0);
+  }
+  50% {
+    box-shadow:
+      0 10px 28px rgba(0,0,0,0.55),
+      0 0 18px rgba(168,85,247,0.55),
+      0 0 22px rgba(34,211,238,0.35);
+  }
+  100% {
+    box-shadow:
+      0 10px 28px rgba(0,0,0,0.55),
+      0 0 0 rgba(168,85,247,0),
+      0 0 0 rgba(34,211,238,0);
+  }
+}
+
+/* -------------------------------------------------------
+   Diamond rim sparkles (requires element in JSX)
+------------------------------------------------------- */
+@keyframes rimSparklePulse {
+  0%   { opacity: 0.25; transform: scale(1); }
+  40%  { opacity: 0.95; transform: scale(1.02); }
+  70%  { opacity: 0.35; transform: scale(1); }
+  100% { opacity: 0.25; transform: scale(1); }
+}
+
+.score-badge__sparkles {
+  display: none; /* default off */
+}
+
+.score-badge--diamond .score-badge__sparkles {
+  display: block;
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  z-index: 4;
+  pointer-events: none;
+
+  /* mask to rim */
+  -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%);
+  mask: radial-gradient(circle, transparent 58%, #000 60%);
+
+  background:
+    radial-gradient(circle at 15% 25%, rgba(255,255,255,.95) 0 1.2px, transparent 1.7px),
+    radial-gradient(circle at 50% 10%, rgba(255,255,255,.85) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 85% 25%, rgba(255,255,255,.9) 0 1.1px, transparent 1.7px),
+    radial-gradient(circle at 92% 60%, rgba(255,255,255,.75) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 70% 88%, rgba(255,255,255,.9) 0 1.2px, transparent 1.7px),
+    radial-gradient(circle at 32% 92%, rgba(255,255,255,.8) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 10% 65%, rgba(255,255,255,.85) 0 1.1px, transparent 1.7px);
+
+  filter: drop-shadow(0 0 6px rgba(146, 31, 253, 0.65));
+  animation: rimSparklePulse 2.8s ease-in-out infinite;
 }

@@ -96,7 +96,7 @@ export default function StreamChatInterface({
         if (!client.userID) {
           await client.connectUser(
             { id: userId, name: userName, image: userImage },
-            token,
+            token
           );
         }
       } catch (err) {
@@ -126,9 +126,7 @@ export default function StreamChatInterface({
       try {
         setError(null);
 
-        const { channelType, channelId } = await createOrGetChannel(
-          otherUser.id,
-        );
+        const { channelType, channelId } = await createOrGetChannel(otherUser.id);
         if (cancelled) return;
 
         const chatChannel = client.channel(channelType!, channelId);
@@ -165,8 +163,7 @@ export default function StreamChatInterface({
             onLastMessageUpdate({
               matchId,
               content: event.message.text,
-              createdAt:
-                event.message.created_at || new Date().toISOString(),
+              createdAt: event.message.created_at || new Date().toISOString(),
             });
           }
         };
@@ -206,8 +203,7 @@ export default function StreamChatInterface({
 
     try {
       const response = await channel.sendMessage({ text });
-      const createdAt =
-        response.message.created_at || new Date().toISOString();
+      const createdAt = response.message.created_at || new Date().toISOString();
 
       const message: Message = {
         id: response.message.id,
@@ -254,14 +250,14 @@ export default function StreamChatInterface({
   // if user isn’t connected yet, just show a tiny hint (no big loader)
   if (!currentUserId || !channel) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#020617] text-xs text-gray-500">
+      <div className="h-full flex items-center justify-center bg-background text-xs text-text-muted">
         Initializing chat…
       </div>
     );
   }
 
   return (
-    <div className="relative h-full flex flex-col bg-[#020617]">
+    <div className="relative h-full flex flex-col bg-background">
       {/* Messages */}
       <div
         ref={messagesContainerRef}
@@ -277,19 +273,19 @@ export default function StreamChatInterface({
             }`}
           >
             <div
-              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
+              className={[
+                "max-w-xs lg:max-w-md px-4 py-2 rounded-2xl border",
                 message.sender === "me"
-                  ? "bg-gradient-to-r from-pink-500 to-red-500 text-white"
-                  : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white"
-              }`}
+                  ? "bg-paprika text-white border-white/10"
+                  : "bg-surface-soft text-foreground border-border",
+              ].join(" ")}
             >
               <p className="text-sm break-words">{message.text}</p>
               <p
-                className={`text-xs mt-1 ${
-                  message.sender === "me"
-                    ? "text-pink-100"
-                    : "text-gray-500 dark:text-gray-400"
-                }`}
+                className={[
+                  "text-xs mt-1",
+                  message.sender === "me" ? "text-white/80" : "text-text-muted",
+                ].join(" ")}
               >
                 {formatTime(message.timestamp)}
               </p>
@@ -303,8 +299,9 @@ export default function StreamChatInterface({
         <div className="absolute bottom-20 right-6 z-10">
           <button
             onClick={scrollToBottom}
-            className="bg-pink-500 hover:bg-pink-600 text-white p-3 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+            className="bg-primary hover:opacity-90 text-primary-foreground p-3 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
             title="Scroll to bottom"
+            type="button"
           >
             <svg
               className="w-5 h-5"
@@ -324,20 +321,20 @@ export default function StreamChatInterface({
       )}
 
       {/* Input */}
-      <div className="border-t border-gray-800 p-4">
+      <div className="border-t border-border bg-surface/40 backdrop-blur p-4">
         <form className="flex space-x-2" onSubmit={handleSendMessage}>
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type a message..."
-            className="flex-1 px-4 py-2 border border-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-gray-900 text-white"
+            className="flex-1 px-4 py-2 rounded-full border border-border bg-surface-soft text-foreground placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             disabled={!channel}
           />
           <button
             type="submit"
             disabled={!newMessage.trim() || !channel}
-            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-red-500 text-white rounded-full hover:from-pink-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            className="px-6 py-2 rounded-full bg-primary text-primary-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
             <svg
               className="w-5 h-5"

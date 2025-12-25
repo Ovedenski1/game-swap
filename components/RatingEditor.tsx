@@ -74,6 +74,163 @@ function normalizeUrl(raw: string): string {
   return `https://${raw}`;
 }
 
+function formatBgDateFromISO(iso: string): string {
+  // iso expected: YYYY-MM-DD
+  if (!iso) return "";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  const [, y, mm, dd] = m;
+  return `${dd}.${mm}.${y}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Simple ComboBox (searchable dropdown)                               */
+/* ------------------------------------------------------------------ */
+
+type ComboBoxProps = {
+  label?: string;
+  placeholder?: string;
+  options: string[];
+  selected: string[];
+  onChangeSelected: (next: string[]) => void;
+  allowCustom?: boolean;
+  helperText?: string;
+};
+
+function ComboBox({ label, placeholder, options, selected, onChangeSelected, allowCustom = true, helperText }: ComboBoxProps) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const normalizedOptions = useMemo(() => {
+    const uniq = Array.from(new Set(options.map((o) => o.trim()).filter(Boolean)));
+    uniq.sort((a, b) => a.localeCompare(b, "bg"));
+    return uniq;
+  }, [options]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    if (!query) return normalizedOptions;
+    return normalizedOptions.filter((o) => o.toLowerCase().includes(query));
+  }, [normalizedOptions, q]);
+
+  function addValue(vRaw: string) {
+    const v = vRaw.trim();
+    if (!v) return;
+    if (selected.some((s) => s.toLowerCase() === v.toLowerCase())) return;
+    onChangeSelected([...selected, v]);
+    setQ("");
+  }
+
+  function removeValue(v: string) {
+    onChangeSelected(selected.filter((s) => s !== v));
+  }
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as any)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  return (
+    <div className="space-y-1" ref={wrapRef}>
+      {label && <label className="text-xs text-white/60">{label}</label>}
+
+      <div className="relative">
+        <div className="flex items-center gap-2 rounded-md border border-white/20 bg-black/40 px-2 py-1">
+          <input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                // If there is an exact match in filtered, pick first; else custom (if allowed)
+                if (filtered.length > 0) addValue(filtered[0]);
+                else if (allowCustom) addValue(q);
+              }
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder={placeholder}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-white/30"
+          />
+
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-white/70 hover:bg-white/5"
+            aria-label="toggle"
+          >
+            ▾
+          </button>
+        </div>
+
+        {open && (
+          <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/15 bg-black/90 shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
+            <div className="max-h-56 overflow-auto p-1">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-white/60">
+                  Няма резултати{allowCustom ? ". Натисни Enter, за да добавиш „" + q.trim() + "“." : "."}
+                </div>
+              ) : (
+                filtered.map((opt) => {
+                  const isSelected = selected.includes(opt);
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      disabled={isSelected}
+                      onClick={() => {
+                        addValue(opt);
+                        setOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+                        isSelected ? "text-white/35" : "text-white/85 hover:bg-white/10"
+                      }`}
+                    >
+                      <span>{opt}</span>
+                      {isSelected ? <span className="text-[11px] text-white/35">Добавено</span> : <span className="text-[11px] text-white/50">Добави</span>}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {helperText && <p className="text-[11px] text-white/40">{helperText}</p>}
+
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-2">
+          {selected
+            .slice()
+            .sort((a, b) => a.localeCompare(b, "bg"))
+            .map((g) => (
+              <span key={g} className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80">
+                {g}
+                <button
+                  type="button"
+                  onClick={() => removeValue(g)}
+                  className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-white/60 hover:bg-white/10"
+                  aria-label={`remove ${g}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Rich text editor                                                   */
 /* ------------------------------------------------------------------ */
@@ -116,29 +273,17 @@ function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
   return (
     <div className="space-y-1 mb-2">
       <div className="flex items-center gap-2 text-[11px] text-white/70">
-        <button
-          type="button"
-          onClick={() => exec("bold")}
-          className="rounded border border-white/30 px-2 py-0.5 font-bold hover:bg-white/10"
-        >
+        <button type="button" onClick={() => exec("bold")} className="rounded border border-white/30 px-2 py-0.5 font-bold hover:bg-white/10">
           B
         </button>
-        <button
-          type="button"
-          onClick={() => exec("italic")}
-          className="rounded border border-white/30 px-2 py-0.5 italic hover:bg-white/10"
-        >
+        <button type="button" onClick={() => exec("italic")} className="rounded border border-white/30 px-2 py-0.5 italic hover:bg-white/10">
           I
         </button>
-        <button
-          type="button"
-          onClick={() => exec("underline")}
-          className="rounded border border-white/30 px-2 py-0.5 underline hover:bg-white/10"
-        >
+        <button type="button" onClick={() => exec("underline")} className="rounded border border-white/30 px-2 py-0.5 underline hover:bg-white/10">
           U
         </button>
 
-        <span className="ml-2">Text color</span>
+        <span className="ml-2">Цвят на текста</span>
         <input
           type="color"
           value={color}
@@ -210,16 +355,7 @@ type GalleryBlock = {
   withBackground?: boolean;
 };
 
-type ReviewBlock =
-  | MediaBlock
-  | ParagraphBlock
-  | HeadingBlock
-  | ImageBlock
-  | QuoteBlock
-  | DividerBlock
-  | CardBlock
-  | EmbedBlock
-  | GalleryBlock;
+type ReviewBlock = MediaBlock | ParagraphBlock | HeadingBlock | ImageBlock | QuoteBlock | DividerBlock | CardBlock | EmbedBlock | GalleryBlock;
 
 /**
  * ✅ Key behavior (updated):
@@ -243,23 +379,19 @@ function normalizeBlocksWithMedia(input: ReviewBlock[]): ReviewBlock[] {
     out.push(b);
   }
 
-  // Ensure at least one non-media block exists
   const hasNonMedia = out.some((b) => b.type !== "media");
   if (!hasNonMedia) out.push({ id: nanoid(), type: "paragraph", text: "" });
 
-  // If no marker, append to end (text first, media second)
   if (!seen) {
     out.push({ id: MEDIA_BLOCK_ID, type: "media" });
   }
 
-  // If marker is first, move it to end
   const mediaIdx = out.findIndex((b) => b.type === "media");
   if (mediaIdx === 0) {
     const [m] = out.splice(0, 1);
     out.push(m);
   }
 
-  // Ensure at least one non-media BEFORE marker
   const mediaIdx2 = out.findIndex((b) => b.type === "media");
   const beforeCount = out.slice(0, mediaIdx2).filter((b) => b.type !== "media").length;
   if (beforeCount === 0) {
@@ -272,8 +404,7 @@ function normalizeBlocksWithMedia(input: ReviewBlock[]): ReviewBlock[] {
 function splitByMedia(blocks: ReviewBlock[]) {
   const idx = blocks.findIndex((b) => b.type === "media");
   const before = idx >= 0 ? blocks.slice(0, idx).filter((b) => b.type !== "media") : [];
-  const after =
-    idx >= 0 ? blocks.slice(idx + 1).filter((b) => b.type !== "media") : blocks.filter((b) => b.type !== "media");
+  const after = idx >= 0 ? blocks.slice(idx + 1).filter((b) => b.type !== "media") : blocks.filter((b) => b.type !== "media");
   const hasMarker = idx >= 0;
   return { before, after, hasMarker, idx };
 }
@@ -305,7 +436,7 @@ function createBlock(type: ReviewBlock["type"]): ReviewBlock {
         title: "",
         body: "",
         linkUrl: "",
-        linkLabel: "Learn more",
+        linkLabel: "Виж още",
         variant: "default",
         mediaType: "none",
         layout: "mediaTop",
@@ -385,8 +516,7 @@ function normalizeEmbedInput(raw: string): string {
 }
 
 function cardVariantClasses(variant: string | undefined) {
-  const base =
-    "mt-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm transition-all shadow-[0_14px_40px_rgba(0,0,0,0.45)]";
+  const base = "mt-4 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm transition-all shadow-[0_14px_40px_rgba(0,0,0,0.45)]";
   switch (variant) {
     case "compact":
       return `${base} text-xs sm:text-sm py-3 px-3`;
@@ -401,6 +531,68 @@ function cardVariantClasses(variant: string | undefined) {
 /* ====================================================================== */
 /* COMPONENT                                                              */
 /* ====================================================================== */
+
+const PLATFORM_OPTIONS = ["PC", "PS5", "PS4", "Xbox Series X|S", "Xbox One", "Nintendo Switch", "Nintendo Switch 2",];
+
+const GENRE_OPTIONS = [
+  "Action",
+  "Adventure",
+  "Arcade",
+  "Battle Royale",
+  "Beat 'em up",
+  "Card Game",
+  "Casual",
+  "City Builder",
+  "Co-op",
+  "Crafting",
+  "Crime",
+  "Deckbuilder",
+  "Detective",
+  "Dungeon Crawler",
+  "Educational",
+  "Fighting",
+  "FPS",
+  "Hack and Slash",
+  "Horror",
+  "Immersive Sim",
+  "Indie",
+  "JRPG",
+  "Kart Racer",
+  "Life Sim",
+  "Metroidvania",
+  "MMO",
+  "MOBA",
+  "Music/Rhythm",
+  "Narrative",
+  "Open World",
+  "Party",
+  "Platformer",
+  "Puzzle",
+  "Racing",
+  "Roguelike",
+  "Roguelite",
+  "RPG",
+  "RTS",
+  "Sandbox",
+  "Shooter",
+  "Simulation",
+  "Souls-like",
+  "Sports",
+  "Stealth",
+  "Strategy",
+  "Survival",
+  "Tactical",
+  "Tower Defense",
+  "Turn-based",
+  "Visual Novel",
+];
+
+function coerceStringArray(v: any): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
+  if (typeof v === "string") return parseList(v);
+  return [];
+}
 
 export default function RatingEditor({ mode, initial }: RatingEditorProps) {
   const router = useRouter();
@@ -467,34 +659,28 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
   const [slug, setSlug] = useState((initial as any)?.slug ?? "");
   const [score, setScore] = useState(initial?.score != null ? String(initial.score) : "");
 
-  const [imageUrl, setImageUrl] = useState(
-    ((initial as any)?.image_url as string | undefined) ?? (initial?.img as string | undefined) ?? "",
-  );
+  const [imageUrl, setImageUrl] = useState(((initial as any)?.image_url as string | undefined) ?? (initial?.img as string | undefined) ?? "");
 
   /* ---------- game details ---------- */
 
   const [developer, setDeveloper] = useState((initial as any)?.developer ?? "");
   const [publisher, setPublisher] = useState((initial as any)?.publisher ?? "");
-  const [releaseDateInput, setReleaseDateInput] = useState(((initial as any)?.release_date as string | undefined) ?? "");
-  const [platformsInput, setPlatformsInput] = useState(
-    ((initial as any)?.platforms as string[] | undefined)?.join(", ") ?? "",
-  );
-  const [genresInput, setGenresInput] = useState(((initial as any)?.genres as string[] | undefined)?.join(", ") ?? "");
+
+  // ✅ date with calendar: keep ISO YYYY-MM-DD in state (works with <input type="date">)
+  const [releaseDateISO, setReleaseDateISO] = useState(((initial as any)?.release_date as string | undefined) ?? "");
+
+  // ✅ platforms as checkboxes
+  const [platformsSelected, setPlatformsSelected] = useState<string[]>(() => coerceStringArray((initial as any)?.platforms));
+
+  // ✅ genres as searchable dropdown + removable list
+  const [genresSelected, setGenresSelected] = useState<string[]>(() => coerceStringArray((initial as any)?.genres));
 
   /* ---------- how long to beat ---------- */
 
-  const [hoursMainInput, setHoursMainInput] = useState(
-    (initial as any)?.hours_main != null ? String((initial as any).hours_main) : "",
-  );
-  const [hoursMainPlusInput, setHoursMainPlusInput] = useState(
-    (initial as any)?.hours_main_plus != null ? String((initial as any).hours_main_plus) : "",
-  );
-  const [hoursCompletionistInput, setHoursCompletionistInput] = useState(
-    (initial as any)?.hours_completionist != null ? String((initial as any).hours_completionist) : "",
-  );
-  const [hoursAllStylesInput, setHoursAllStylesInput] = useState(
-    (initial as any)?.hours_all_styles != null ? String((initial as any).hours_all_styles) : "",
-  );
+  const [hoursMainInput, setHoursMainInput] = useState((initial as any)?.hours_main != null ? String((initial as any).hours_main) : "");
+  const [hoursMainPlusInput, setHoursMainPlusInput] = useState((initial as any)?.hours_main_plus != null ? String((initial as any).hours_main_plus) : "");
+  const [hoursCompletionistInput, setHoursCompletionistInput] = useState((initial as any)?.hours_completionist != null ? String((initial as any).hours_completionist) : "");
+  const [hoursAllStylesInput, setHoursAllStylesInput] = useState((initial as any)?.hours_all_styles != null ? String((initial as any).hours_all_styles) : "");
 
   /* ---------- media (still stored in rating row) ---------- */
 
@@ -512,12 +698,11 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
 
   /* ---------- review ---------- */
 
-  const [verdictLabel, setVerdictLabel] = useState(((initial as any)?.verdict_label as string | undefined) ?? "Review");
+  const [verdictLabel, setVerdictLabel] = useState(((initial as any)?.verdict_label as string | undefined) ?? "Ревю");
 
   const [blocks, setBlocks] = useState<ReviewBlock[]>(() => {
     const existing = (((initial as any)?.review_body as string | undefined) ?? "");
 
-    // default for new: text first, media second (marker appended by normalize)
     if (!existing.trim()) {
       return normalizeBlocksWithMedia([createBlock("paragraph"), createBlock("paragraph")]);
     }
@@ -527,20 +712,15 @@ export default function RatingEditor({ mode, initial }: RatingEditorProps) {
       if (Array.isArray(parsed)) return normalizeBlocksWithMedia(parsed as ReviewBlock[]);
     } catch {}
 
-    return normalizeBlocksWithMedia([
-      { id: nanoid(), type: "paragraph", text: existing.replace(/\n/g, "<br />") } as ParagraphBlock,
-      createBlock("paragraph"),
-    ]);
+    return normalizeBlocksWithMedia([{ id: nanoid(), type: "paragraph", text: existing.replace(/\n/g, "<br />") } as ParagraphBlock, createBlock("paragraph")]);
   });
 
   const [reviewerName, setReviewerName] = useState(((initial as any)?.reviewer_name as string | undefined) ?? "");
-  const [reviewerAvatarUrl, setReviewerAvatarUrl] = useState(
-    ((initial as any)?.reviewer_avatar_url as string | undefined) ?? "",
-  );
+  const [reviewerAvatarUrl, setReviewerAvatarUrl] = useState(((initial as any)?.reviewer_avatar_url as string | undefined) ?? "");
 
   const [saving, setSaving] = useState(false);
-const [error, setError] = useState<string | null>(null);
-const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   function handleSelectAuthor(id: string) {
     setSelectedAuthorId(id);
@@ -605,17 +785,17 @@ const [success, setSuccess] = useState<string | null>(null);
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-setSuccess(null);
-setSaving(true);
+    setSuccess(null);
+    setSaving(true);
 
     try {
-      if (!title.trim()) throw new Error("Game title is required.");
+      if (!title.trim()) throw new Error("Заглавието на играта е задължително.");
       const parsedScore = parseNumber(score);
-      if (parsedScore == null) throw new Error("Score must be a valid number.");
-      if (!imageUrl.trim()) throw new Error("Cover image is required.");
+      if (parsedScore == null) throw new Error("Оценката трябва да е валидно число.");
+      if (!imageUrl.trim()) throw new Error("Корица/изображение е задължително.");
 
-      const platforms = parseList(platformsInput);
-      const genres = parseList(genresInput);
+      const platforms = platformsSelected.map((p) => p.trim()).filter(Boolean);
+      const genres = genresSelected.map((g) => g.trim()).filter(Boolean);
 
       const galleryPayload =
         gallery.length > 0
@@ -642,7 +822,10 @@ setSaving(true);
 
         developer: developer.trim() || null,
         publisher: publisher.trim() || null,
-        release_date: releaseDateInput.trim() || null,
+
+        // store ISO date in DB; UI is calendar-based and preview shows BG format
+        release_date: releaseDateISO.trim() || null,
+
         platforms: platforms.length ? platforms : null,
         genres: genres.length ? genres : null,
 
@@ -660,18 +843,15 @@ setSaving(true);
         verdict_label: verdictLabel.trim() || null,
       };
 
-     let saved: any;
-if (mode === "edit" && initial?.id) saved = await adminUpdateRating(initial.id, payload);
-else saved = await adminCreateRating(payload);
+      if (mode === "edit" && initial?.id) await adminUpdateRating(initial.id, payload);
+      else await adminCreateRating(payload);
 
-setSuccess("Saved!");
-router.refresh(); // optional but fine
-
-setTimeout(() => setSuccess(null), 2000);
-
+      setSuccess("Записано!");
+      router.refresh();
+      setTimeout(() => setSuccess(null), 2000);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to save rating");
+      setError(err.message || "Грешка при запис.");
     } finally {
       setSaving(false);
     }
@@ -680,9 +860,10 @@ setTimeout(() => setSuccess(null), 2000);
   /* ---------- preview derived ---------- */
 
   const previewScoreNumber = parseNumber(score);
-  const previewCover = imageUrl.trim() || "/placeholder-rating-cover.jpg";
-  const previewPlatforms = parseList(platformsInput);
-  const previewGenres = parseList(genresInput);
+  const previewCover = imageUrl.trim() || null;
+
+  const previewPlatforms = platformsSelected;
+  const previewGenres = genresSelected;
 
   const embedTrailer = getYouTubeEmbedUrl(trailerUrl);
 
@@ -725,11 +906,7 @@ setTimeout(() => setSuccess(null), 2000);
         const text = (block as any).text ?? "";
         if (!text) return null;
         return (
-          <div
-            key={key}
-            className="text-sm sm:text-base leading-relaxed text-white/85 whitespace-pre-wrap break-words"
-            dangerouslySetInnerHTML={{ __html: text }}
-          />
+          <div key={key} className="text-sm sm:text-base leading-relaxed text-white/85 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: text }} />
         );
       }
 
@@ -741,13 +918,7 @@ setTimeout(() => setSuccess(null), 2000);
         return (
           <figure key={key} className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
             <div className="relative w-full aspect-[16/9]">
-              <Image
-                src={url}
-                alt={caption || "Screenshot"}
-                fill
-                sizes="(min-width: 1200px) 900px, 100vw"
-                className="object-cover"
-              />
+              <Image src={url} alt={caption || "Скрийншот"} fill sizes="(min-width: 1200px) 900px, 100vw" className="object-cover" />
             </div>
             {caption && (
               <figcaption className="px-3 pb-3 pt-2 text-xs text-white/60 whitespace-pre-wrap break-words">
@@ -807,14 +978,11 @@ setTimeout(() => setSuccess(null), 2000);
         const body = b.body ?? "";
         const rawLinkUrl = b.linkUrl ?? "";
         const linkUrl = rawLinkUrl ? normalizeUrl(rawLinkUrl) : "";
-        const linkLabel = b.linkLabel || "Learn more";
+        const linkLabel = b.linkLabel || "Виж още";
 
         const variant: CardVariant = b.variant ?? "default";
         const mediaType: CardMediaType = b.mediaType ?? "none";
-        const layout: CardLayout =
-          b.layout === "mediaBottom" || b.layout === "mediaLeft" || b.layout === "mediaRight"
-            ? b.layout
-            : "mediaTop";
+        const layout: CardLayout = b.layout === "mediaBottom" || b.layout === "mediaLeft" || b.layout === "mediaRight" ? b.layout : "mediaTop";
         const cardWidth: CardWidth = b.cardWidth === "full" ? "full" : "narrow";
 
         const embedUrl = mediaType === "video" ? getYouTubeEmbedUrl(b.videoUrl) : null;
@@ -828,7 +996,7 @@ setTimeout(() => setSuccess(null), 2000);
             <div className="overflow-hidden rounded-xl border border-white/10 bg-black/60 aspect-video">
               <iframe
                 src={embedUrl}
-                title={title || "YouTube video"}
+                title={title || "YouTube видео"}
                 className="h-full w-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
@@ -841,11 +1009,8 @@ setTimeout(() => setSuccess(null), 2000);
                 return (
                   <div key={modalId} className="relative aspect-square w-full">
                     <input type="checkbox" id={modalId} className="peer hidden" />
-                    <label
-                      htmlFor={modalId}
-                      className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40"
-                    >
-                      <img src={url} alt={title || `Gallery image ${imgIndex + 1}`} className="h-full w-full object-cover" />
+                    <label htmlFor={modalId} className="block h-full w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                      <img src={url} alt={title || `Галерия ${imgIndex + 1}`} className="h-full w-full object-cover" />
                     </label>
 
                     <div className="fixed inset-0 z-40 hidden items-center justify-center bg-black/80 p-4 peer-checked:flex">
@@ -853,11 +1018,7 @@ setTimeout(() => setSuccess(null), 2000);
                       <div className="relative z-50 max-w-4xl w-full">
                         <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-black">
                           <div className="relative w-full aspect-[16/9] sm:aspect-[21/9]">
-                            <img
-                              src={url}
-                              alt={title || `Gallery image ${imgIndex + 1}`}
-                              className="h-full w-full object-contain bg-black"
-                            />
+                            <img src={url} alt={title || `Галерия ${imgIndex + 1}`} className="h-full w-full object-contain bg-black" />
                           </div>
                         </div>
                       </div>
@@ -887,9 +1048,7 @@ setTimeout(() => setSuccess(null), 2000);
 
         let inner;
         if (layout === "mediaLeft" || layout === "mediaRight") {
-          const floatClass =
-            layout === "mediaRight" ? "float-right ml-4 mb-2 w-24 sm:w-32" : "float-left mr-4 mb-2 w-24 sm:w-32";
-
+          const floatClass = layout === "mediaRight" ? "float-right ml-4 mb-2 w-24 sm:w-32" : "float-left mr-4 mb-2 w-24 sm:w-32";
           inner = (
             <div className='after:content-[""] after:block after:clear-both'>
               {media && <div className={floatClass}>{media}</div>}
@@ -929,22 +1088,14 @@ setTimeout(() => setSuccess(null), 2000);
       return (
         <div className="flex items-center justify-between text-[11px] text-white/50">
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => moveBlock(block.id, "up")}
-              className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
-            >
+            <button type="button" onClick={() => moveBlock(block.id, "up")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
               ↑
             </button>
-            <button
-              type="button"
-              onClick={() => moveBlock(block.id, "down")}
-              className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
-            >
+            <button type="button" onClick={() => moveBlock(block.id, "down")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
               ↓
             </button>
           </div>
-          <span className="text-white/60">Media block</span>
+          <span className="text-white/60">Медиен блок</span>
         </div>
       );
     }
@@ -952,26 +1103,14 @@ setTimeout(() => setSuccess(null), 2000);
     return (
       <div className="flex items-center justify-between text-[11px] text-white/50">
         <div className="flex gapl gap-2">
-          <button
-            type="button"
-            onClick={() => moveBlock(block.id, "up")}
-            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
-          >
+          <button type="button" onClick={() => moveBlock(block.id, "up")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
             ↑
           </button>
-          <button
-            type="button"
-            onClick={() => moveBlock(block.id, "down")}
-            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
-          >
+          <button type="button" onClick={() => moveBlock(block.id, "down")} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
             ↓
           </button>
-          <button
-            type="button"
-            onClick={() => duplicateBlock(block.id)}
-            className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10"
-          >
-            Copy
+          <button type="button" onClick={() => duplicateBlock(block.id)} className="rounded-full border border-white/20 px-2 py-0.5 hover:bg-white/10">
+            Копие
           </button>
         </div>
         <button
@@ -979,13 +1118,24 @@ setTimeout(() => setSuccess(null), 2000);
           onClick={() => removeBlock(block.id)}
           className="rounded-full border border-red-500/60 px-2 py-0.5 text-red-300 hover:bg-red-500/10"
         >
-          Delete
+          Изтрий
         </button>
       </div>
     );
   }
 
   function renderEditorBlock(block: ReviewBlock) {
+    const addBlockLabels: Record<string, string> = {
+      paragraph: "Параграф",
+      heading: "Заглавие",
+      image: "Изображение",
+      gallery: "Галерия",
+      quote: "Цитат",
+      embed: "Вграждане",
+      card: "Картичка",
+      divider: "Разделител",
+    };
+
     return (
       <div key={block.id} className="space-y-2 rounded-lg border border-white/10 bg-black/40 p-3">
         {renderEditorBlockControls(block)}
@@ -994,7 +1144,7 @@ setTimeout(() => setSuccess(null), 2000);
         {block.type === "media" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-xs text-white/60">Trailer URL (YouTube link or embed URL)</label>
+              <label className="text-xs text-white/60">Линк към трейлър (YouTube линк или embed)</label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm break-words"
                 value={trailerUrl}
@@ -1005,41 +1155,32 @@ setTimeout(() => setSuccess(null), 2000);
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-white/60">Gallery images</span>
+                <span className="text-xs text-white/60">Изображения в галерия</span>
                 <button
                   type="button"
                   className="rounded-full border border-white/30 px-2 py-0.5 text-[11px]"
                   onClick={() => setGallery((g) => [...g, { url: "", caption: "" }])}
                 >
-                  + Add image
+                  + Добави изображение
                 </button>
               </div>
 
-              {gallery.length === 0 && <p className="text-[11px] text-white/50">No images yet. Click “Add image”.</p>}
+              {gallery.length === 0 && <p className="text-[11px] text-white/50">Няма изображения. Натисни „Добави изображение“.</p>}
 
               <div className="space-y-2">
                 {gallery.map((g, idx) => (
-                  <div
-                    key={idx}
-                    className="grid gap-2 rounded-md border border-white/15 bg-black/40 p-2 text-xs md:grid-cols-[2fr,3fr,auto]"
-                  >
+                  <div key={idx} className="grid gap-2 rounded-md border border-white/15 bg-black/40 p-2 text-xs md:grid-cols-[2fr,3fr,auto]">
                     <NewsImageUpload
-                      label="Image URL"
+                      label="URL на изображение"
                       value={g.url}
-                      onChange={(url) =>
-                        setGallery((list) => list.map((item, i) => (i === idx ? { ...item, url } : item)))
-                      }
+                      onChange={(url) => setGallery((list) => list.map((item, i) => (i === idx ? { ...item, url } : item)))}
                     />
                     <div className="space-y-1">
-                      <label className="text-[11px] text-white/60">Caption (optional)</label>
+                      <label className="text-[11px] text-white/60">Надпис (по желание)</label>
                       <input
                         className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                         value={g.caption || ""}
-                        onChange={(e) =>
-                          setGallery((list) =>
-                            list.map((item, i) => (i === idx ? { ...item, caption: e.target.value } : item)),
-                          )
-                        }
+                        onChange={(e) => setGallery((list) => list.map((item, i) => (i === idx ? { ...item, caption: e.target.value } : item)))}
                       />
                     </div>
 
@@ -1048,7 +1189,7 @@ setTimeout(() => setSuccess(null), 2000);
                       onClick={() => setGallery((list) => list.filter((_, i) => i !== idx))}
                       className="inline-flex w-fit self-start items-center justify-center rounded-full border border-red-500/60 px-3 py-1 text-[11px] text-red-200 hover:bg-red-500/10"
                     >
-                      Remove
+                      Премахни
                     </button>
                   </div>
                 ))}
@@ -1057,31 +1198,17 @@ setTimeout(() => setSuccess(null), 2000);
           </div>
         )}
 
-        {block.type === "paragraph" && (
-          <RichTextEditor
-            value={block.text}
-            onChange={(html) => updateBlock<ParagraphBlock>(block.id, { text: html })}
-            placeholder="Review text..."
-          />
-        )}
+        {block.type === "paragraph" && <RichTextEditor value={block.text} onChange={(html) => updateBlock<ParagraphBlock>(block.id, { text: html })} placeholder="Текст на ревюто..." />}
 
         {block.type === "heading" && (
           <div className="space-y-2">
             <div className="flex gap-2 text-[11px]">
               <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={block.level === 2}
-                  onChange={() => updateBlock<HeadingBlock>(block.id, { level: 2 })}
-                />
+                <input type="radio" checked={block.level === 2} onChange={() => updateBlock<HeadingBlock>(block.id, { level: 2 })} />
                 H2
               </label>
               <label className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  checked={block.level === 3}
-                  onChange={() => updateBlock<HeadingBlock>(block.id, { level: 3 })}
-                />
+                <input type="radio" checked={block.level === 3} onChange={() => updateBlock<HeadingBlock>(block.id, { level: 3 })} />
                 H3
               </label>
             </div>
@@ -1089,49 +1216,43 @@ setTimeout(() => setSuccess(null), 2000);
               className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
               value={block.text}
               onChange={(e) => updateBlock<HeadingBlock>(block.id, { text: e.target.value })}
-              placeholder="Section title…"
+              placeholder="Заглавие на секция…"
             />
           </div>
         )}
 
         {block.type === "image" && (
           <div className="space-y-2">
-            <NewsImageUpload label="Block image" value={block.url} onChange={(url) => updateBlock<ImageBlock>(block.id, { url })} />
+            <NewsImageUpload label="Изображение в блока" value={block.url} onChange={(url) => updateBlock<ImageBlock>(block.id, { url })} />
             <input
               className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
               value={block.caption}
               onChange={(e) => updateBlock<ImageBlock>(block.id, { caption: e.target.value })}
-              placeholder="Caption (optional)…"
+              placeholder="Надпис (по желание)…"
             />
           </div>
         )}
 
-        {block.type === "quote" && (
-          <RichTextEditor
-            value={block.text}
-            onChange={(html) => updateBlock<QuoteBlock>(block.id, { text: html })}
-            placeholder="Pull-quote…"
-          />
-        )}
+        {block.type === "quote" && <RichTextEditor value={block.text} onChange={(html) => updateBlock<QuoteBlock>(block.id, { text: html })} placeholder="Цитат…" />}
 
         {block.type === "embed" && (
           <div className="space-y-2">
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">Embed URL or iframe / Twitter code</label>
+              <label className="text-[11px] text-white/60">URL или iframe / X (Twitter) код</label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.url}
                 onChange={(e) => updateBlock<EmbedBlock>(block.id, { url: normalizeEmbedInput(e.target.value) })}
-                placeholder="Paste Facebook/YouTube/X URL or embed code"
+                placeholder="Постави Facebook/YouTube/X URL или embed код"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">Optional caption / title</label>
+              <label className="text-[11px] text-white/60">Надпис (по желание)</label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.title || ""}
                 onChange={(e) => updateBlock<EmbedBlock>(block.id, { title: e.target.value })}
-                placeholder="Short caption…"
+                placeholder="Кратък надпис…"
               />
             </div>
           </div>
@@ -1140,29 +1261,25 @@ setTimeout(() => setSuccess(null), 2000);
         {block.type === "gallery" && (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-[11px] text-white/60">Gallery title (optional)</label>
+              <label className="text-[11px] text-white/60">Заглавие на галерия (по желание)</label>
               <input
                 className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                 value={block.title ?? ""}
                 onChange={(e) => updateBlock<GalleryBlock>(block.id, { title: e.target.value })}
-                placeholder="e.g. Screenshots…"
+                placeholder="напр. Скрийншоти…"
               />
             </div>
 
             <label className="flex items-center gap-2 text-[11px] text-white/70">
-              <input
-                type="checkbox"
-                checked={block.withBackground ?? false}
-                onChange={(e) => updateBlock<GalleryBlock>(block.id, { withBackground: e.target.checked })}
-              />
-              <span>Show dark box behind gallery</span>
+              <input type="checkbox" checked={block.withBackground ?? false} onChange={(e) => updateBlock<GalleryBlock>(block.id, { withBackground: e.target.checked })} />
+              <span>Покажи тъмен фон зад галерията</span>
             </label>
 
             <div className="space-y-2">
               {(block.images ?? []).map((img, idx) => (
                 <div key={img.id} className="grid gap-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] items-start">
                   <GalleryImageUpload
-                    label={`Image ${idx + 1}`}
+                    label={`Изображение ${idx + 1}`}
                     value={img.url}
                     onChange={(url) => {
                       const next = (block.images ?? []).map((g, i) => (i === idx ? { ...g, url } : g));
@@ -1177,7 +1294,7 @@ setTimeout(() => setSuccess(null), 2000);
                         const next = (block.images ?? []).map((g, i) => (i === idx ? { ...g, caption: e.target.value } : g));
                         updateBlock<GalleryBlock>(block.id, { images: next });
                       }}
-                      placeholder="Caption (optional)…"
+                      placeholder="Надпис (по желание)…"
                     />
                     <button
                       type="button"
@@ -1187,7 +1304,7 @@ setTimeout(() => setSuccess(null), 2000);
                       }}
                       className="text-[11px] text-red-300 hover:text-red-200"
                     >
-                      Remove image
+                      Премахни изображение
                     </button>
                   </div>
                 </div>
@@ -1201,7 +1318,7 @@ setTimeout(() => setSuccess(null), 2000);
                 }}
                 className="rounded-full border border-white/30 px-3 py-1 text-[11px] hover:bg-white/10"
               >
-                + Add image
+                + Добави изображение
               </button>
             </div>
           </div>
@@ -1211,54 +1328,50 @@ setTimeout(() => setSuccess(null), 2000);
           <div className="space-y-2">
             <div className="grid gap-2 sm:grid-cols-4 text-[11px]">
               <div className="space-y-1">
-                <label className="text-white/60">Card size / style</label>
+                <label className="text-white/60">Стил</label>
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.variant}
                   onChange={(e) => updateBlock<CardBlock>(block.id, { variant: e.target.value as CardVariant })}
                 >
-                  <option value="default">Default</option>
-                  <option value="compact">Compact</option>
-                  <option value="featured">Featured</option>
+                  <option value="default">Нормална</option>
+                  <option value="compact">Компактна</option>
+                  <option value="featured">Акцент</option>
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="text-white/60">Media</label>
+                <label className="text-white/60">Медия</label>
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.mediaType}
                   onChange={(e) => updateBlock<CardBlock>(block.id, { mediaType: e.target.value as any })}
                 >
-                  <option value="none">None</option>
-                  <option value="video">YouTube video</option>
-                  <option value="imageGrid">Image gallery (up to 3)</option>
+                  <option value="none">Без</option>
+                  <option value="video">YouTube видео</option>
+                  <option value="imageGrid">Галерия (до 3)</option>
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="text-white/60">Layout</label>
-                <select
-                  className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-                  value={block.layout}
-                  onChange={(e) => updateBlock<CardBlock>(block.id, { layout: e.target.value as any })}
-                >
-                  <option value="mediaTop">Media top, text bottom</option>
-                  <option value="mediaBottom">Text top, media bottom</option>
-                  <option value="mediaLeft">Media left, text right</option>
-                  <option value="mediaRight">Text left, media right</option>
+                <label className="text-white/60">Подредба</label>
+                <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.layout} onChange={(e) => updateBlock<CardBlock>(block.id, { layout: e.target.value as any })}>
+                  <option value="mediaTop">Медия отгоре</option>
+                  <option value="mediaBottom">Медия отдолу</option>
+                  <option value="mediaLeft">Медия вляво</option>
+                  <option value="mediaRight">Медия вдясно</option>
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="text-white/60">Card width</label>
+                <label className="text-white/60">Ширина</label>
                 <select
                   className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                   value={block.cardWidth || "narrow"}
                   onChange={(e) => updateBlock<CardBlock>(block.id, { cardWidth: e.target.value as CardWidth })}
                 >
-                  <option value="narrow">Narrow</option>
-                  <option value="full">Full article width</option>
+                  <option value="narrow">Тясна</option>
+                  <option value="full">На цялата ширина</option>
                 </select>
               </div>
             </div>
@@ -1278,71 +1391,37 @@ setTimeout(() => setSuccess(null), 2000);
             {block.mediaType === "imageGrid" && (
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-white/60">Gallery layout</label>
-                  <select
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-                    value={block.imageLayout || "row"}
-                    onChange={(e) => updateBlock<CardBlock>(block.id, { imageLayout: e.target.value as "row" | "grid" })}
-                  >
-                    <option value="row">Row</option>
-                    <option value="grid">Grid</option>
+                  <label className="text-[11px] text-white/60">Подредба на галерията</label>
+                  <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.imageLayout || "row"} onChange={(e) => updateBlock<CardBlock>(block.id, { imageLayout: e.target.value as "row" | "grid" })}>
+                    <option value="row">Ред</option>
+                    <option value="grid">Решетка</option>
                   </select>
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[0, 1, 2].map((idx) => (
-                    <NewsImageUpload
-                      key={idx}
-                      label={`Image ${idx + 1}`}
-                      value={(block.imageUrls ?? [])[idx] || ""}
-                      onChange={(url) => updateBlock<CardBlock>(block.id, { imageUrls: updateImageUrls(block, idx, url) })}
-                    />
+                    <NewsImageUpload key={idx} label={`Изображение ${idx + 1}`} value={(block.imageUrls ?? [])[idx] || ""} onChange={(url) => updateBlock<CardBlock>(block.id, { imageUrls: updateImageUrls(block, idx, url) })} />
                   ))}
                 </div>
               </div>
             )}
 
-            <input
-              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-              value={block.title}
-              onChange={(e) => updateBlock<CardBlock>(block.id, { title: e.target.value })}
-              placeholder="Card title…"
-            />
+            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.title} onChange={(e) => updateBlock<CardBlock>(block.id, { title: e.target.value })} placeholder="Заглавие…" />
 
-            <RichTextEditor
-              value={block.body}
-              onChange={(html) => updateBlock<CardBlock>(block.id, { body: html })}
-              placeholder="Short text…"
-            />
+            <RichTextEditor value={block.body} onChange={(html) => updateBlock<CardBlock>(block.id, { body: html })} placeholder="Кратък текст…" />
 
-            <input
-              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-              value={block.linkUrl}
-              onChange={(e) => updateBlock<CardBlock>(block.id, { linkUrl: e.target.value })}
-              placeholder="Link URL (https://google.com)…"
-            />
-            <input
-              className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-              value={block.linkLabel}
-              onChange={(e) => updateBlock<CardBlock>(block.id, { linkLabel: e.target.value })}
-              placeholder='Link label (e.g. "Read more")…'
-            />
+            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.linkUrl} onChange={(e) => updateBlock<CardBlock>(block.id, { linkUrl: e.target.value })} placeholder="Линк (https://...)…" />
+            <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={block.linkLabel} onChange={(e) => updateBlock<CardBlock>(block.id, { linkLabel: e.target.value })} placeholder='Текст на линка (напр. "Прочети още")…' />
           </div>
         )}
 
-        {block.type === "divider" && <p className="text-[11px] text-white/60">Horizontal divider</p>}
+        {block.type === "divider" && <p className="text-[11px] text-white/60">Хоризонтален разделител</p>}
 
-        {/* ✅ SAME CHIPS for BOTH review blocks AND media block */}
         <div className="pt-2 border-t border-white/10 mt-2 flex flex-wrap gap-2 text-[11px]">
-          <span className="text-white/50">Add block:</span>
+          <span className="text-white/50">Добави блок:</span>
           {(["paragraph", "heading", "image", "gallery", "quote", "embed", "card", "divider"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => addBlockAfter(block.id, t)}
-              className="rounded-full border border-white/30 px-2 py-0.5 hover:bg-white/10"
-            >
-              {t}
+            <button key={t} type="button" onClick={() => addBlockAfter(block.id, t)} className="rounded-full border border-white/30 px-2 py-0.5 hover:bg-white/10">
+              {addBlockLabels[t]}
             </button>
           ))}
         </div>
@@ -1354,6 +1433,8 @@ setTimeout(() => setSuccess(null), 2000);
   /* RENDER                                                             */
   /* ------------------------------------------------------------------ */
 
+  const todayBg = new Date().toLocaleDateString("bg-BG");
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       {/* LEFT: form */}
@@ -1362,7 +1443,7 @@ setTimeout(() => setSuccess(null), 2000);
         <div className="sticky top-3 z-30 px-1 py-2 flex items-center justify-between">
           <Link
             href="/admin"
-            aria-label="Back to admin"
+            aria-label="Назад"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-transparent hover:bg-white/5"
           >
             <span className="text-lg leading-none">←</span>
@@ -1374,172 +1455,141 @@ setTimeout(() => setSuccess(null), 2000);
             disabled={saving}
             className="inline-flex items-center justify-center rounded-full bg-lime-400 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
           >
-            {saving ? "Saving…" : mode === "edit" ? "Save" : "Create"}
+            {saving ? "Запис..." : mode === "edit" ? "Запази" : "Създай"}
           </button>
         </div>
-        {success && (
-  <div className="rounded-md border border-lime-400/40 bg-lime-400/10 px-3 py-2 text-sm text-lime-200">
-    {success}
-  </div>
-)}
 
+        {success && <div className="rounded-md border border-lime-400/40 bg-lime-400/10 px-3 py-2 text-sm text-lime-200">{success}</div>}
 
-        {error && (
-          <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>
-        )}
+        {error && <div className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
 
         <form id="rating-editor-form" onSubmit={handleSubmit} className="space-y-6">
           {/* Basic info + Game details together */}
           <section className="space-y-3 rounded-2xl border border-white/10 bg-black/40 p-4">
-            <h2 className="text-sm font-semibold">Basic info</h2>
+            <h2 className="text-sm font-semibold">Основна информация</h2>
 
             <div className="space-y-1">
-              <label className="text-xs text-white/60">Game title</label>
-              <input
-                className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-              />
+              <label className="text-xs text-white/60">Заглавие на играта</label>
+              <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
 
             <details className="rounded-xl border border-white/10 bg-black/30 p-3">
-              <summary className="cursor-pointer text-xs font-semibold text-white/70">SEO & URL (optional)</summary>
+              <summary className="cursor-pointer text-xs font-semibold text-white/70">SEO & URL (по желание)</summary>
               <div className="mt-3 space-y-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Slug (for URL)</label>
+                  <label className="text-xs text-white/60">Slug (за URL)</label>
                   <input
                     className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
                     value={slug}
                     onChange={(e) => setSlug(e.target.value)}
-                    placeholder="example: witcher-3-review"
+                    placeholder="пример: witcher-3-review"
                   />
-                  <p className="text-[11px] text-white/40">If empty, the rating will use the numeric id in the URL.</p>
+                  <p className="text-[11px] text-white/40">Ако е празно, ще се използва числовото id.</p>
                 </div>
-
-                {/* ✅ removed auto-summary preview UI */}
               </div>
             </details>
 
             <div className="grid gap-3 md:grid-cols-[1fr,180px]">
               <div className="space-y-1">
-                <label className="text-xs text-white/60">Score</label>
-                <input
-                  className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                  value={score}
-                  onChange={(e) => setScore(e.target.value)}
-                  placeholder="8.5"
-                />
+                <label className="text-xs text-white/60">Оценка</label>
+                <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={score} onChange={(e) => setScore(e.target.value)} placeholder="8.5" />
               </div>
 
-              <NewsImageUpload label="Cover image" value={imageUrl} onChange={setImageUrl} />
+              <GalleryImageUpload label="Корица" value={imageUrl} onChange={setImageUrl} />
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Game details</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Детайли за играта</h3>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Developer</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={developer}
-                    onChange={(e) => setDeveloper(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">Разработчик</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={developer} onChange={(e) => setDeveloper(e.target.value)} />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Publisher</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={publisher}
-                    onChange={(e) => setPublisher(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">Издател</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={publisher} onChange={(e) => setPublisher(e.target.value)} />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Release date (YYYY-MM-DD)</label>
+                  <label className="text-xs text-white/60">Дата на издаване</label>
                   <input
+                    type="date"
                     className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={releaseDateInput}
-                    onChange={(e) => setReleaseDateInput(e.target.value)}
-                    placeholder="2025-11-14"
+                    value={releaseDateISO}
+                    onChange={(e) => setReleaseDateISO(e.target.value)}
                   />
+                  <p className="text-[11px] text-white/40">Показва се като {releaseDateISO ? formatBgDateFromISO(releaseDateISO) : "дд.мм.гггг"}.</p>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs text-white/60">Platforms (comma separated)</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={platformsInput}
-                    onChange={(e) => setPlatformsInput(e.target.value)}
-                    placeholder="PC, PS5, Xbox Series X"
-                  />
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-xs text-white/60">Платформи</label>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {PLATFORM_OPTIONS.map((p) => {
+                      const checked = platformsSelected.includes(p);
+                      return (
+                        <label key={p} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/75 hover:bg-white/5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) setPlatformsSelected((prev) => Array.from(new Set([...prev, p])));
+                              else setPlatformsSelected((prev) => prev.filter((x) => x !== p));
+                            }}
+                          />
+                          <span>{p}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs text-white/60">Genres (comma separated)</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={genresInput}
-                    onChange={(e) => setGenresInput(e.target.value)}
-                    placeholder="RPG, Action, Souls-like"
+                  <ComboBox
+                    label="Жанрове"
+                    placeholder="Започни да пишеш (напр. RPG, Horror...)"
+                    options={GENRE_OPTIONS}
+                    selected={genresSelected}
+                    onChangeSelected={setGenresSelected}
+                    allowCustom
+                    helperText="Можеш да търсиш по име, да избираш от списъка или да добавиш нов жанр (Enter)."
                   />
                 </div>
               </div>
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">How long to beat</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Време за изиграване</h3>
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Main story (hours)</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={hoursMainInput}
-                    onChange={(e) => setHoursMainInput(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">Основна история (часове)</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursMainInput} onChange={(e) => setHoursMainInput(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Story + sides</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={hoursMainPlusInput}
-                    onChange={(e) => setHoursMainPlusInput(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">История + странични</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursMainPlusInput} onChange={(e) => setHoursMainPlusInput(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">Completionist</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={hoursCompletionistInput}
-                    onChange={(e) => setHoursCompletionistInput(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">100%</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursCompletionistInput} onChange={(e) => setHoursCompletionistInput(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-white/60">All styles</label>
-                  <input
-                    className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                    value={hoursAllStylesInput}
-                    onChange={(e) => setHoursAllStylesInput(e.target.value)}
-                  />
+                  <label className="text-xs text-white/60">Всички стилове</label>
+                  <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={hoursAllStylesInput} onChange={(e) => setHoursAllStylesInput(e.target.value)} />
                 </div>
               </div>
             </div>
 
             <div className="pt-3 border-t border-white/10 space-y-3">
-              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Reviewer</h3>
+              <h3 className="text-xs font-semibold text-white/80 uppercase tracking-wide">Автор</h3>
 
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] text-white/60">Choose reviewer</label>
-                    <select
-                      className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
-                      value={selectedAuthorId}
-                      onChange={(e) => handleSelectAuthor(e.target.value)}
-                    >
-                      <option value="">Custom reviewer…</option>
+                    <label className="text-[11px] text-white/60">Избери автор</label>
+                    <select className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs" value={selectedAuthorId} onChange={(e) => handleSelectAuthor(e.target.value)}>
+                      <option value="">Персонализиран автор…</option>
                       {authors.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.name}
@@ -1550,7 +1600,7 @@ setTimeout(() => setSuccess(null), 2000);
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[11px] text-white/60">Reviewer name</label>
+                    <label className="text-[11px] text-white/60">Име на автора</label>
                     <input
                       className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-xs"
                       value={reviewerName}
@@ -1558,7 +1608,7 @@ setTimeout(() => setSuccess(null), 2000);
                         setSelectedAuthorId("");
                         setReviewerName(e.target.value);
                       }}
-                      placeholder="e.g. Viktor"
+                      placeholder="напр. Виктор"
                     />
                   </div>
                 </div>
@@ -1566,15 +1616,9 @@ setTimeout(() => setSuccess(null), 2000);
                 <div className="flex flex-col items-center gap-3">
                   <div className="relative h-28 w-28 rounded-full overflow-hidden border border-white/60 bg-black/50 flex-shrink-0">
                     {reviewerAvatarUrl ? (
-                      <Image
-                        src={reviewerAvatarUrl}
-                        alt={reviewerName || "Reviewer avatar"}
-                        fill
-                        sizes="112px"
-                        className="object-cover"
-                      />
+                      <Image src={reviewerAvatarUrl} alt={reviewerName || "Автор"} fill sizes="112px" className="object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-[10px] text-white/60">No image</div>
+                      <div className="flex h-full w-full items-center justify-center text-[10px] text-white/60">Няма снимка</div>
                     )}
                   </div>
                 </div>
@@ -1584,21 +1628,16 @@ setTimeout(() => setSuccess(null), 2000);
 
           {/* Review blocks */}
           <section className="space-y-3 rounded-2xl border border-white/10 bg-black/40 p-4">
-            <h2 className="text-sm font-semibold">Review & verdict</h2>
+            <h2 className="text-sm font-semibold">Ревю & етикет</h2>
 
             <div className="space-y-1">
-              <label className="text-xs text-white/60">Verdict label</label>
-              <input
-                className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm"
-                value={verdictLabel}
-                onChange={(e) => setVerdictLabel(e.target.value)}
-                placeholder="Review"
-              />
+              <label className="text-xs text-white/60">Етикет до оценката</label>
+              <input className="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1 text-sm" value={verdictLabel} onChange={(e) => setVerdictLabel(e.target.value)} placeholder="Ревю" />
             </div>
 
             <div className="pt-2 border-t border-white/10 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-white/70">Review blocks</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-white/70">Блокове</h3>
 
                 <button
                   type="button"
@@ -1611,7 +1650,7 @@ setTimeout(() => setSuccess(null), 2000);
                   }
                   className="rounded-full border border-white/30 px-3 py-1 text-[11px] hover:bg-white/10"
                 >
-                  + Paragraph
+                  + Параграф
                 </button>
               </div>
 
@@ -1624,7 +1663,7 @@ setTimeout(() => setSuccess(null), 2000);
       {/* RIGHT: preview (scaled down) */}
       <aside className="lg:sticky lg:top-3 h-fit">
         <div ref={previewWrapRef} className="rounded-2xl border border-white/10 bg-black/40 p-3 overflow-hidden">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">Live preview</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/60">Преглед на живо</p>
 
           <div className="rounded-xl border border-white/10 bg-surface p-3">
             <div
@@ -1637,106 +1676,117 @@ setTimeout(() => setSuccess(null), 2000);
               <div className="space-y-6">
                 {/* HERO */}
                 <div className="rounded-2xl border border-white/10 bg-black/40 p-4 sm:p-5 space-y-4">
-                  <div className="flex flex-col gap-4 md:flex-row">
-                    <div className="relative w-full md:w-[260px] aspect-[16/9] md:aspect-[4/3] rounded-xl overflow-hidden border border-white/15 bg-black/60">
-                      <Image src={previewCover} alt={title || "Game cover"} fill sizes="260px" className="object-cover" />
-                    </div>
+  <div className="flex flex-col gap-4 md:flex-row md:items-start">
+    <div className="relative w-full md:w-[155px] aspect-[2/3] max-h-[230px] rounded-xl overflow-hidden border border-white/15 bg-transparent">
+      {previewCover ? (
+        <Image
+          src={previewCover}
+          alt={title || "Корица"}
+          fill
+          sizes="(min-width: 1024px) 155px, 60vw"
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
+          No image
+        </div>
+      )}
+    </div>
 
-                    <div className="flex-1 flex flex-col justify-between gap-3 min-w-0">
+
+                    <div className="flex-1 flex flex-col justify-start gap-4 min-w-0 pt-1">
                       <div className="space-y-2">
-                        <p className="text-[11px] uppercase tracking-wide text-white/60">{new Date().toLocaleDateString()}</p>
-                        <h1 className="text-2xl sm:text-3xl font-extrabold leading-tight break-words">{title || "Game title…"}</h1>
+                        <p className="text-[11px] uppercase tracking-wide text-white/60">{todayBg}</p>
 
-                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/70">
+                        <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight break-words">{title || "Заглавие на играта…"}</h1>
+
+                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-white/70">
                           {developer && (
                             <span className="break-all">
-                              <span className="text-white/50">Developer:</span> {developer}
+                              <span className="text-white/50">Разработчик:</span> {developer}
+                            </span>
+                          )}
+                          {releaseDateISO && (
+                            <span className="break-all">
+                              <span className="text-white/50">Премиера:</span> {formatBgDateFromISO(releaseDateISO)}
                             </span>
                           )}
                           {publisher && (
                             <span className="break-all">
-                              <span className="text-white/50">Publisher:</span> {publisher}
-                            </span>
-                          )}
-                          {releaseDateInput && (
-                            <span className="break-all">
-                              <span className="text-white/50">Release:</span> {releaseDateInput}
+                              <span className="text-white/50">Издател:</span> {publisher}
                             </span>
                           )}
                         </div>
 
                         {(previewPlatforms.length > 0 || previewGenres.length > 0) && (
-                          <div className="mt-2 flex flex-wrap gap-2">
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
                             {previewPlatforms.length > 0 && <PlatformIcons platforms={previewPlatforms} />}
-
-                            {previewGenres.map((g) => (
-                              <span
-                                key={`genre-${g}`}
-                                className="rounded-full border border-purple-400/60 bg-purple-500/20 px-2 py-0.5 text-[11px] break-words"
-                              >
-                                {g}
-                              </span>
-                            ))}
                           </div>
                         )}
                       </div>
 
+                      {/* ✅ Score row + genres on the right as clean text (no pills) */}
                       <div className="flex items-center gap-3">
                         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500 text-xl font-bold shadow-[0_0_30px_rgba(248,113,113,0.7)]">
                           {previewScoreNumber != null ? previewScoreNumber.toFixed(1) : "--"}
                         </div>
-                        <div className="text-[11px] text-white/70">
-                          <p className="text-[10px] uppercase tracking-wide">GameLink score</p>
-                          <p className="break-words">{verdictLabel || "Review"}</p>
+
+                        <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
+                          <div className="text-[12px] text-white/70">
+                            <p className="text-[10px] uppercase tracking-wide">GameLink оценка</p>
+                            <p className="break-words">{verdictLabel || "Ревю"}</p>
+                          </div>
+
+                          {previewGenres.length > 0 && (
+                            <div className="text-right text-[11px] text-white/55 leading-snug max-w-[55%]">
+                              <p className="uppercase tracking-wide text-[10px] text-white/40">Жанрове</p>
+                              <p className="truncate">{previewGenres.join(" • ")}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-white/10">
-                    <h2 className="text-sm font-semibold mb-2">How long to beat</h2>
+                    <h2 className="text-sm font-semibold mb-2">Време за изиграване</h2>
 
                     <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 text-center text-[11px]">
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">Main story</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursMainInput ? `${hoursMainInput} hrs` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">Основна история</p>
+                        <p className="mt-1 text-sm font-semibold">{hoursMainInput ? `${hoursMainInput} ч.` : "--"}</p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">Story + sides</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursMainPlusInput ? `${hoursMainPlusInput} hrs` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">История + странични</p>
+                        <p className="mt-1 text-sm font-semibold">{hoursMainPlusInput ? `${hoursMainPlusInput} ч.` : "--"}</p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">Completionist</p>
-                        <p className="mt-1 text-sm font-semibold">
-                          {hoursCompletionistInput ? `${hoursCompletionistInput} hrs` : "--"}
-                        </p>
+                        <p className="text-[10px] uppercase text-white/50">100%</p>
+                        <p className="mt-1 text-sm font-semibold">{hoursCompletionistInput ? `${hoursCompletionistInput} ч.` : "--"}</p>
                       </div>
 
                       <div className="rounded-xl border border-white/10 bg-black/30 px-2 py-2">
-                        <p className="text-[10px] uppercase text-white/50">All styles</p>
-                        <p className="mt-1 text-sm font-semibold">{hoursAllStylesInput ? `${hoursAllStylesInput} hrs` : "--"}</p>
+                        <p className="text-[10px] uppercase text-white/50">Всички стилове</p>
+                        <p className="mt-1 text-sm font-semibold">{hoursAllStylesInput ? `${hoursAllStylesInput} ч.` : "--"}</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* ✅ Blocks + Media marker respected */}
+                {/* Blocks + Media marker respected */}
                 {(blocksBeforeMedia.length > 0 || blocksAfterMedia.length > 0) && (
                   <div className="space-y-3">
-                    {blocksBeforeMedia.length > 0 && (
-                      <section className="space-y-3">{blocksBeforeMedia.map((b, idx) => renderBlockLikePage(b, idx))}</section>
-                    )}
+                    {blocksBeforeMedia.length > 0 && <section className="space-y-3">{blocksBeforeMedia.map((b, idx) => renderBlockLikePage(b, idx))}</section>}
 
-                    {/* ✅ Media renders at marker position */}
                     {hasMarker && (embedTrailer || previewGallery.length > 0) && (
                       <div className="space-y-3">
                         {embedTrailer && (
                           <div className="w-full max-w-2xl mx-auto aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
                             <iframe
                               src={embedTrailer}
-                              title="Trailer"
+                              title="Трейлър"
                               className="h-full w-full"
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                               allowFullScreen
@@ -1749,19 +1799,18 @@ setTimeout(() => setSuccess(null), 2000);
 
                     {blocksAfterMedia.length > 0 && (
                       <div className="space-y-3">
-                        <h2 className="text-sm font-semibold">{verdictLabel || "Review"}</h2>
+                        <h2 className="text-sm font-semibold">{verdictLabel || "Ревю"}</h2>
                         <section className="space-y-3">{blocksAfterMedia.map((b, idx) => renderBlockLikePage(b, idx))}</section>
                       </div>
                     )}
 
-                    {/* ✅ Fallback for old/no-marker: media at bottom */}
                     {!hasMarker && (embedTrailer || previewGallery.length > 0) && (
                       <div className="space-y-3">
                         {embedTrailer && (
                           <div className="w-full max-w-2xl mx-auto aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
                             <iframe
                               src={embedTrailer}
-                              title="Trailer"
+                              title="Трейлър"
                               className="h-full w-full"
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                               allowFullScreen
@@ -1779,7 +1828,7 @@ setTimeout(() => setSuccess(null), 2000);
                   <div className="rounded-2xl border border-white/10 bg-black/40 p-3 sm:p-4">
                     <div className="flex items-center gap-3">
                       <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/40 bg-black flex-shrink-0">
-                        <Image src={reviewerAvatarUrl || "/default.jpg"} alt={reviewerName || "Author"} fill sizes="40px" className="object-cover" />
+                        <Image src={reviewerAvatarUrl || "/default.jpg"} alt={reviewerName || "Автор"} fill sizes="40px" className="object-cover" />
                       </div>
                       <div className="text-sm min-w-0">{reviewerName && <p className="font-semibold break-words">{reviewerName}</p>}</div>
                     </div>

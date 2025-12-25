@@ -1,5 +1,3 @@
-// app/profile/platforms/page.tsx
-
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -11,56 +9,52 @@ export default async function PlatformPreferencesPage() {
   const profile = await getCurrentUserProfile();
 
   if (!profile) {
-    // not logged in → go to auth
     redirect("/auth");
   }
 
   const preferred =
-    ((profile.preferences?.preferred_platforms ||
-      []) as GamePlatform[]) || [];
+    ((profile.preferences?.preferred_platforms || []) as GamePlatform[]) || [];
 
   return (
-    <div className="flex-1 flex flex-col bg-background text-white">
-      <main className="flex-1 flex">
-        <div className="flex-1 max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 flex">
-          {/* outer shell – same as Profile / EditProfile */}
-          <div className="flex-1 bg-surface ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] rounded-b-3xl flex flex-col">
-            <div className="p-4 sm:p-6 lg:p-8 flex-1 flex flex-col">
-              <div className="max-w-3xl mx-auto w-full">
-                {/* Header: back link row + centered title, like EditProfile */}
-                <header className="mb-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <Link
-                      href="/profile"
-                      className="text-xs sm:text-sm text-white/70 hover:text-white underline underline-offset-4"
-                    >
-                      ← Back to Profile
-                    </Link>
-                  </div>
+    <div className="max-w-[1500px] mx-auto px-3 sm:px-6 lg:px-4 py-6 sm:py-8">
+      {/* Header (client style) */}
+      <header className="text-center">
+        <div className="mx-auto mb-3 h-[2px] w-16 rounded-full bg-bronze/80" />
 
-                  <div className="text-center">
-                    <h1 className="text-3xl font-bold mb-2">
-                      Filter by Platforms
-                    </h1>
-                    <p className="text-white/60 text-sm">
-                      Choose which game platforms you want to see when swiping.
-                    </p>
-                  </div>
-                </header>
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href="/profile"
+            className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-black/20 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-white/90 hover:bg-black/30 transition"
+          >
+            ← Back
+          </Link>
 
-                {/* Inner card – same style as other inner cards */}
-                <div className="bg-surface-soft rounded-2xl border border-border shadow-[0_18px_45px_rgba(0,0,0,0.8)] p-6 sm:p-8">
-                  <PlatformPreferencesForm initialSelected={preferred} />
-                </div>
-              </div>
-            </div>
-          </div>
+          <h1
+            className={[
+              "text-3xl sm:text-4xl lg:text-5xl font-extrabold uppercase",
+              "tracking-tight text-foreground leading-none",
+              "[text-shadow:0_2px_0_rgba(0,0,0,0.35)]",
+            ].join(" ")}
+          >
+            Filter by Platforms
+          </h1>
+
+          {/* keeps title centered */}
+          <div className="w-[72px] sm:w-[80px]" />
         </div>
-      </main>
 
-      <footer className="bg-navbar border-t border-border text-foreground text-center py-4 text-xs sm:text-sm font-medium">
-        © {new Date().getFullYear()} GameLink — Built with ❤️ using Next.js
-      </footer>
+        <p className="mt-3 text-xs sm:text-sm text-text-muted">
+          Choose which game platforms you want to see when swiping.
+        </p>
+      </header>
+
+      <div className="mt-7 h-px w-full bg-border/40" />
+
+      <div className="mt-6 max-w-3xl mx-auto">
+        <div className="rounded-2xl border border-border bg-background/40 shadow-[0_18px_45px_rgba(0,0,0,0.35)] p-6 sm:p-8">
+          <PlatformPreferencesForm initialSelected={preferred} />
+        </div>
+      </div>
     </div>
   );
 }
