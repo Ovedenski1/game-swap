@@ -8,7 +8,7 @@ import {
   type PotentialMatch,
 } from "@/lib/actions/matches";
 import { useEffect, useState } from "react";
-import { UserProfile } from "../profile/page";
+import { UserProfile } from "@/components/ProfilePage";
 import { useRouter } from "next/navigation";
 import MatchCard from "@/components/MatchCard";
 import MatchNotification from "@/components/MatchNotification";

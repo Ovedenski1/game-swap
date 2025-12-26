@@ -1,8 +1,7 @@
 "use client";
 
-import { UserProfile } from "@/app/profile/page";
+import { UserProfile } from "@/components/ProfilePage"
 import { getUserMatches } from "@/lib/actions/matches";
-import { match } from "assert";
 import { useEffect, useState } from "react"
 import Link from "next/link";
 
@@ -103,9 +102,7 @@ export default function MatchesListPage() {
                                           />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                            {match.full_name}, {calculateAge(match.birthdate)}
-                                        </h3>
+                                        
                                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
                                             @{match.username}
                                         </p>
