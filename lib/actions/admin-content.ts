@@ -67,8 +67,24 @@ function slugify(input: string): string {
     .replace(/-+/g, "-");
 }
 
+/**
+ * Minimal query shape we need for ensureUniqueSlug.
+ * (No `any`, but still flexible enough for Supabase.)
+ */
+type SupabaseQueryResult = { data: unknown[] | null; error: unknown | null };
+
+type SupabaseSlugQuery = {
+  eq: (column: string, value: string) => SupabaseSlugQuery;
+  neq: (column: string, value: string | number) => SupabaseSlugQuery;
+  limit: (count: number) => Promise<SupabaseQueryResult>;
+};
+
 type SupabaseLike = {
-  from: (table: string) => any; // NOTE: Supabase server client type is huge; we avoid importing it here.
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => SupabaseSlugQuery;
+    };
+  };
 };
 
 async function ensureUniqueSlug(
@@ -84,10 +100,13 @@ async function ensureUniqueSlug(
   let suffix = 1;
 
   while (true) {
-    let query = supabase.from(table).select("id").eq("slug", candidate).limit(1);
-    if (currentId != null) query = query.neq("id", currentId);
+    let query = supabase.from(table).select("id").eq("slug", candidate);
 
-    const { data, error } = await query;
+    if (currentId != null) {
+      query = query.neq("id", currentId);
+    }
+
+    const { data, error } = await query.limit(1);
 
     if (error) {
       console.error("ensureUniqueSlug error", error);
@@ -104,21 +123,33 @@ async function ensureUniqueSlug(
 /* ---------- mappers ---------- */
 
 function mapStoryRow(row: Row): NewsItem {
-  const id = row.id as string | number | null;
-  const slug = row.slug as string | null;
+  const rawId = row.id;
+  const id = rawId == null ? "" : String(rawId);
 
-  const internalPath =
-    slug ? `/news/${slug}` : id ? `/news/${String(id)}` : undefined;
+  const slug = typeof row.slug === "string" ? row.slug : null;
+
+  const internalPath = slug ? `/news/${slug}` : id ? `/news/${id}` : undefined;
+
+  const title = typeof row.title === "string" ? row.title : "";
+  const img = typeof row.image_url === "string" ? row.image_url : "";
+
+  const href =
+    typeof row.link_url === "string" && row.link_url.trim()
+      ? row.link_url
+      : internalPath;
+
+  const subtitle =
+    (typeof row.subtitle === "string" && row.subtitle) ||
+    (typeof row.summary === "string" && row.summary) ||
+    undefined;
 
   return {
-    id: id as any, // NewsItem likely expects whatever your component uses; keep it stable.
-    title: (row.title as string) ?? "",
-    img: (row.image_url as string) ?? "",
-    href: (row.link_url as string | null) ?? internalPath,
-    subtitle:
-      (row.subtitle as string | null) ??
-      (row.summary as string | null) ??
-      undefined,
+    // ✅ avoid `any` by normalizing to string id
+    id,
+    title,
+    img,
+    href,
+    subtitle,
   };
 }
 
@@ -128,8 +159,8 @@ function mapRatingRow(row: Row): RatingItem {
     game_title: (row.game_title as string) ?? "",
     img: (row.image_url as string) ?? "",
     score: Number(row.score ?? 0),
-    subtitle: ((row.summary as string | null) ?? null),
-    slug: ((row.slug as string | null) ?? null),
+    subtitle: (row.summary as string | null) ?? null,
+    slug: (row.slug as string | null) ?? null,
   };
 }
 

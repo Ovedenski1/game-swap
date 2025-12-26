@@ -1,10 +1,10 @@
 "use client";
 
-import type React from "react";
 import { useMemo, useState, useTransition } from "react";
+import toast from "react-hot-toast";
+
 import { adminUpdateRentalStatus } from "@/lib/actions/rentals";
 import type { RentalRequest } from "@/lib/actions/rentals";
-import toast from "react-hot-toast";
 
 type Status =
   | "pending"
@@ -28,6 +28,31 @@ const ORDER: Array<"all" | Status> = [
   "cancelled",
 ];
 
+type UserShape = {
+  avatar_url?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+};
+
+type RentalGameShape = {
+  title?: string | null;
+  platform?: string | null;
+};
+
+type RentalRequestShape = RentalRequest & {
+  id: string;
+  status?: Status | string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  city?: string | null;
+  shipping_address?: string | null;
+  phone_number?: string | null;
+  delivery_type?: string | null;
+  notes?: string | null;
+  user?: UserShape | null;
+  rental_game?: RentalGameShape | null;
+};
+
 function titleCase(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -38,34 +63,68 @@ function getErrorMessage(err: unknown): string {
   return "Failed to update status";
 }
 
+function isStatus(v: unknown): v is Status {
+  return (
+    v === "pending" ||
+    v === "approved" ||
+    v === "shipped" ||
+    v === "playing" ||
+    v === "overdue" ||
+    v === "returned" ||
+    v === "rejected" ||
+    v === "cancelled"
+  );
+}
+
+function getStatus(r: RentalRequestShape): Status {
+  const s = r.status;
+  if (isStatus(s)) return s;
+  if (typeof s === "string" && isStatus(s)) return s;
+  return "pending";
+}
+
 export default function AdminRentalRequests({
   initialRequests,
 }: {
   initialRequests: RentalRequest[];
 }) {
-  const [items, setItems] = useState<RentalRequest[]>(initialRequests);
+  const [items, setItems] = useState<RentalRequestShape[]>(
+    (initialRequests as RentalRequestShape[]).map((r) => ({
+      ...r,
+      id: String((r as unknown as { id?: unknown }).id ?? ""),
+    })),
+  );
+
   const [pending, startTransition] = useTransition();
   const [filter, setFilter] = useState<(typeof ORDER)[number]>("all");
 
   const filteredItems =
     filter === "all"
       ? items
-      : items.filter((r) => String((r as any).status) === String(filter));
+      : items.filter((r) => getStatus(r) === filter);
 
   const grouped = useMemo(() => {
-    const by: Record<string, RentalRequest[]> = {};
+    const by: Record<Status, RentalRequestShape[]> = {
+      pending: [],
+      approved: [],
+      shipped: [],
+      playing: [],
+      overdue: [],
+      returned: [],
+      rejected: [],
+      cancelled: [],
+    };
+
     for (const r of filteredItems) {
-      const st = String((r as any).status || "pending");
-      (by[st] ||= []).push(r);
+      by[getStatus(r)].push(r);
     }
+
     return by;
   }, [filteredItems]);
 
   function updateLocal(id: string, status: Status) {
     setItems((prev) =>
-      prev.map((x) =>
-        String((x as any).id) === String(id) ? ({ ...x, status } as any) : x,
-      ),
+      prev.map((x) => (x.id === id ? { ...x, status } : x)),
     );
   }
 
@@ -107,9 +166,9 @@ export default function AdminRentalRequests({
           No {filter === "all" ? "" : String(filter)} rental requests.
         </p>
       ) : (
-        ORDER.filter((s) => s !== "all").map((status) => {
-          const list = grouped[status] || [];
-          if (list.length === 0) return null;
+        (ORDER.filter((s) => s !== "all") as Status[]).map((status) => {
+          const list = grouped[status];
+          if (!list.length) return null;
 
           return (
             <section
@@ -117,144 +176,163 @@ export default function AdminRentalRequests({
               className="rounded-2xl border border-white/10 bg-[#0d0d0d]/80 p-4 shadow-lg"
             >
               <h2 className="text-sm font-bold uppercase tracking-wide text-white/80 mb-4">
-                {status} <span className="text-white/40">({list.length})</span>
+                {status}{" "}
+                <span className="text-white/40">({list.length})</span>
               </h2>
 
               <div className="space-y-3">
-                {list.map((r) => (
-                  <div
-                    key={String((r as any).id)}
-                    className="rounded-2xl border border-white/10 bg-black/30 p-4 flex items-start gap-4"
-                  >
-                    {/* User avatar */}
-                    <div className="w-12 h-12 rounded-full overflow-hidden border border-white/10 flex-shrink-0">
-                      {(r as any)?.user?.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={(r as any).user.avatar_url}
-                          alt={(r as any).user.full_name || "User avatar"}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-neutral-800 flex items-center justify-center text-xs text-white/40">
-                          No img
-                        </div>
-                      )}
-                    </div>
+                {list.map((r) => {
+                  const id = r.id;
 
-                    {/* Game + details */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-white">
-                        {(r as any)?.rental_game?.title ?? "Unknown game"}{" "}
-                        <span className="text-white/50 text-sm">
-                          ({(r as any)?.rental_game?.platform ?? "—"})
-                        </span>
-                      </p>
+                  const avatarUrl = r.user?.avatar_url ?? null;
+                  const fullName = r.user?.full_name ?? null;
+                  const email = r.user?.email ?? null;
 
-                      <p className="text-xs text-white/60">
-                        {(r as any).first_name} {(r as any).last_name} —{" "}
-                        {(r as any)?.user?.email ?? "—"}
-                      </p>
+                  const gameTitle = r.rental_game?.title ?? "Unknown game";
+                  const gamePlatform = r.rental_game?.platform ?? "—";
 
-                      <p className="text-xs text-white/60">
-                        <span className="text-white/50">City:</span>{" "}
-                        {(r as any).city || "—"}
-                      </p>
+                  const firstName = r.first_name ?? "";
+                  const lastName = r.last_name ?? "";
 
-                      <p className="text-xs text-white/60 whitespace-pre-wrap">
-                        <span className="text-white/50">Address:</span>{" "}
-                        {(r as any).shipping_address || "—"}
-                      </p>
+                  const city = r.city ?? "—";
+                  const shippingAddress = r.shipping_address ?? "—";
+                  const phone = r.phone_number ?? "—";
+                  const deliveryType = r.delivery_type ?? "—";
+                  const notes = r.notes ?? null;
 
-                      <p className="text-xs text-white/60">
-                        <span className="text-white/50">Phone:</span>{" "}
-                        {(r as any).phone_number || "—"}
-                      </p>
+                  return (
+                    <div
+                      key={id}
+                      className="rounded-2xl border border-white/10 bg-black/30 p-4 flex items-start gap-4"
+                    >
+                      {/* User avatar */}
+                      <div className="w-12 h-12 rounded-full overflow-hidden border border-white/10 flex-shrink-0">
+                        {avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={avatarUrl}
+                            alt={fullName || "User avatar"}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-neutral-800 flex items-center justify-center text-xs text-white/40">
+                            No img
+                          </div>
+                        )}
+                      </div>
 
-                      <p className="text-xs text-white/60">
-                        <span className="text-white/50">Delivery:</span>{" "}
-                        {(r as any).delivery_type || "—"}
-                      </p>
-
-                      {(r as any).notes && (
-                        <p className="mt-1 text-xs text-white/70">
-                          <span className="text-white/50">Notes:</span>{" "}
-                          {(r as any).notes}
+                      {/* Game + details */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white">
+                          {gameTitle}{" "}
+                          <span className="text-white/50 text-sm">
+                            ({gamePlatform})
+                          </span>
                         </p>
-                      )}
 
-                      {/* Action buttons */}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {status === "pending" && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={pending}
-                              onClick={() => setStatus(String((r as any).id), "approved")}
-                              className="rounded-xl bg-lime-400 text-black px-3 py-2 text-xs font-bold disabled:opacity-60"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              disabled={pending}
-                              onClick={() => setStatus(String((r as any).id), "rejected")}
-                              className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-60"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
+                        <p className="text-xs text-white/60">
+                          {firstName} {lastName}
+                          {" — "}
+                          {email ?? "—"}
+                        </p>
 
-                        {status === "approved" && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={pending}
-                              onClick={() => setStatus(String((r as any).id), "shipped")}
-                              className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold border border-white/15 disabled:opacity-60"
-                            >
-                              Mark shipped
-                            </button>
-                            <button
-                              type="button"
-                              disabled={pending}
-                              onClick={() => setStatus(String((r as any).id), "cancelled")}
-                              className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-60"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        )}
+                        <p className="text-xs text-white/60">
+                          <span className="text-white/50">City:</span> {city}
+                        </p>
 
-                        {(["shipped", "playing", "overdue"] as Status[]).includes(
-                          status as Status,
-                        ) && (
-                          <>
-                            {status !== "playing" && (
+                        <p className="text-xs text-white/60 whitespace-pre-wrap">
+                          <span className="text-white/50">Address:</span>{" "}
+                          {shippingAddress}
+                        </p>
+
+                        <p className="text-xs text-white/60">
+                          <span className="text-white/50">Phone:</span> {phone}
+                        </p>
+
+                        <p className="text-xs text-white/60">
+                          <span className="text-white/50">Delivery:</span>{" "}
+                          {deliveryType}
+                        </p>
+
+                        {notes ? (
+                          <p className="mt-1 text-xs text-white/70">
+                            <span className="text-white/50">Notes:</span> {notes}
+                          </p>
+                        ) : null}
+
+                        {/* Action buttons */}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {status === "pending" && (
+                            <>
                               <button
                                 type="button"
                                 disabled={pending}
-                                onClick={() => setStatus(String((r as any).id), "playing")}
-                                className="rounded-xl bg-lime-500 text-black px-3 py-2 text-xs font-bold disabled:opacity-60"
+                                onClick={() => setStatus(id, "approved")}
+                                className="rounded-xl bg-lime-400 text-black px-3 py-2 text-xs font-bold disabled:opacity-60"
                               >
-                                Mark playing
+                                Approve
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              disabled={pending}
-                              onClick={() => setStatus(String((r as any).id), "returned")}
-                              className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold border border-white/15 disabled:opacity-60"
-                            >
-                              Mark returned
-                            </button>
-                          </>
-                        )}
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => setStatus(id, "rejected")}
+                                className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+
+                          {status === "approved" && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => setStatus(id, "shipped")}
+                                className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold border border-white/15 disabled:opacity-60"
+                              >
+                                Mark shipped
+                              </button>
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => setStatus(id, "cancelled")}
+                                className="rounded-xl bg-red-500 text-white px-3 py-2 text-xs font-bold disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          )}
+
+                          {(["shipped", "playing", "overdue"] as Status[]).includes(
+                            status,
+                          ) && (
+                            <>
+                              {status !== "playing" && (
+                                <button
+                                  type="button"
+                                  disabled={pending}
+                                  onClick={() => setStatus(id, "playing")}
+                                  className="rounded-xl bg-lime-500 text-black px-3 py-2 text-xs font-bold disabled:opacity-60"
+                                >
+                                  Mark playing
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={() => setStatus(id, "returned")}
+                                className="rounded-xl bg-white/10 text-white px-3 py-2 text-xs font-bold border border-white/15 disabled:opacity-60"
+                              >
+                                Mark returned
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           );

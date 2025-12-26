@@ -2,20 +2,38 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { StreamChat, Channel, Event } from "stream-chat";
+import type { FormEvent, ChangeEvent } from "react";
+import { StreamChat, type Channel } from "stream-chat";
 
-import { UserProfile } from "@/app/profile/page";
+import type { UserProfile } from "@/components/ProfilePage";
 import { createOrGetChannel, getStreamUserToken } from "@/lib/actions/stream";
 
-interface Message {
+type ChatMessage = {
   id: string;
   text: string;
   sender: "me" | "other";
   timestamp: Date;
   user_id: string;
-}
+};
 
-interface StreamChatInterfaceProps {
+type StreamUserLike = { id?: string | null } | null | undefined;
+
+type StreamMessageLike = {
+  id: string;
+  text?: string | null;
+  created_at?: string | Date | null;
+  user?: StreamUserLike;
+};
+
+type WatchStateLike = {
+  messages?: StreamMessageLike[] | null;
+};
+
+type EventWithMessageLike = {
+  message?: StreamMessageLike | null;
+};
+
+type StreamChatInterfaceProps = {
   otherUser: UserProfile;
   matchId: string;
   onLastMessageUpdate?: (args: {
@@ -23,6 +41,23 @@ interface StreamChatInterfaceProps {
     content: string;
     createdAt: string;
   }) => void;
+};
+
+function toDate(value: string | Date | null | undefined): Date {
+  if (!value) return new Date();
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function toIso(value: string | Date | null | undefined): string {
+  return toDate(value).toISOString();
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Something went wrong";
 }
 
 export default function StreamChatInterface({
@@ -33,12 +68,18 @@ export default function StreamChatInterface({
   const [error, setError] = useState<string | null>(null);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState<string>("");
 
-  // 👇 client is created once and is NEVER null → no TS error
-  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY!;
-  const [client] = useState<StreamChat>(() => StreamChat.getInstance(apiKey));
+  // Stream client instance (created once)
+  const apiKey = process.env.NEXT_PUBLIC_STREAM_API_KEY;
+  const [client] = useState<StreamChat>(() => {
+    if (!apiKey) {
+      // still create, but you’ll see a friendly error below
+      return StreamChat.getInstance("missing_key");
+    }
+    return StreamChat.getInstance(apiKey);
+  });
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [showScrollButton, setShowScrollButton] = useState<boolean>(false);
@@ -46,64 +87,65 @@ export default function StreamChatInterface({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  /* ---------- scrolling helpers ---------- */
-
-  // no smooth animation – just jump to bottom instantly
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     setShowScrollButton(false);
   }
 
   function handleScroll() {
-    if (!messagesContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } =
-      messagesContainerRef.current;
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
     setShowScrollButton(!isNearBottom);
   }
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
+    const el = messagesContainerRef.current;
+    if (!el) return;
 
-    container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
   /* ---------- 1) Connect user to Stream ONCE ---------- */
-
   useEffect(() => {
     let cancelled = false;
 
     async function connect() {
       try {
         setError(null);
+
+        if (!process.env.NEXT_PUBLIC_STREAM_API_KEY) {
+          throw new Error("Missing NEXT_PUBLIC_STREAM_API_KEY");
+        }
+
         const { token, userId, userName, userImage } =
           await getStreamUserToken();
 
         if (cancelled) return;
 
         if (!token || !userId) {
-          throw new Error("Missing Stream user token or ID");
+          throw new Error("Missing Stream user token or userId");
         }
 
         setCurrentUserId(userId);
 
+        // connect only once
         if (!client.userID) {
           await client.connectUser(
             { id: userId, name: userName, image: userImage },
             token
           );
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Stream connect error:", err);
-        if (!cancelled) {
-          setError("Failed to start chat. Please try again.");
-        }
+        if (!cancelled) setError(getErrorMessage(err));
       }
     }
 
@@ -111,90 +153,94 @@ export default function StreamChatInterface({
 
     return () => {
       cancelled = true;
-      // do NOT disconnect the user here – keeps client warm between chats
+      // keep client connected between chats
     };
   }, [client]);
 
-  /* ---------- 2) Load / switch channel when otherUser changes ---------- */
-
+  /* ---------- 2) Load / switch channel ---------- */
   useEffect(() => {
-    if (!otherUser || !currentUserId) return;
+    if (!otherUser?.id || !currentUserId) return;
 
     let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
 
-    async function loadChannel() {
+    function mapMsg(msg: StreamMessageLike): ChatMessage {
+      const userId = msg.user?.id ?? "";
+      const created = toDate(msg.created_at);
+      return {
+        id: msg.id,
+        text: msg.text ?? "",
+        sender: userId === currentUserId ? "me" : "other",
+        timestamp: created,
+        user_id: userId,
+      };
+    }
+
+    async function load() {
       try {
         setError(null);
 
         const { channelType, channelId } = await createOrGetChannel(otherUser.id);
         if (cancelled) return;
 
-        const chatChannel = client.channel(channelType!, channelId);
-        const watchState = await chatChannel.watch();
+        if (!channelType || !channelId) {
+          throw new Error("Missing channelType/channelId from createOrGetChannel()");
+        }
+
+        const ch = client.channel(channelType, channelId);
+        const watchStateUnknown = await ch.watch();
+
         if (cancelled) return;
 
-        setChannel(chatChannel);
+        setChannel(ch);
 
-        // initial messages
-        const mapMsg = (msg: any): Message => ({
-          id: msg.id,
-          text: msg.text || "",
-          sender: msg.user?.id === currentUserId ? "me" : "other",
-          timestamp: new Date(msg.created_at || new Date()),
-          user_id: msg.user?.id || "",
-        });
-
-        const initial = (watchState.messages || []).map(mapMsg);
+        const watchState = watchStateUnknown as unknown as WatchStateLike;
+        const initial = (watchState.messages ?? []).map(mapMsg);
         setMessages(initial);
 
-        // subscribe to new messages
-        const handler = (event: Event) => {
-          if (!event.message) return;
+        const handler = (eventUnknown: unknown) => {
+          const event = eventUnknown as EventWithMessageLike;
+          const msg = event.message ?? null;
+          if (!msg) return;
 
-          const newMsg = mapMsg(event.message);
+          const next = mapMsg(msg);
 
           setMessages((prev) => {
-            const exists = prev.some((m) => m.id === newMsg.id);
-            return exists ? prev : [...prev, newMsg];
+            if (prev.some((m) => m.id === next.id)) return prev;
+            return [...prev, next];
           });
 
-          // bubble up to sidebar
-          if (onLastMessageUpdate && event.message.text) {
+          if (onLastMessageUpdate && (msg.text ?? "").trim()) {
             onLastMessageUpdate({
               matchId,
-              content: event.message.text,
-              createdAt: event.message.created_at || new Date().toISOString(),
+              content: msg.text ?? "",
+              createdAt: toIso(msg.created_at),
             });
           }
         };
 
-        chatChannel.on("message.new", handler);
+        // stream-chat typings differ across versions; string event name is stable
+        ch.on("message.new", handler as unknown as (e: unknown) => void);
 
-        return () => {
-          chatChannel.off("message.new", handler);
+        unsubscribe = () => {
+          ch.off("message.new", handler as unknown as (e: unknown) => void);
         };
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("loadChannel error:", err);
-        if (!cancelled) {
-          setError("Failed to load this conversation.");
-        }
+        if (!cancelled) setError(getErrorMessage(err));
       }
     }
 
-    const cleanupPromise = loadChannel();
+    load();
 
     return () => {
       cancelled = true;
-      // remove listeners when switching chats
-      cleanupPromise
-        .then((cleanup) => typeof cleanup === "function" && cleanup())
-        .catch(() => {});
+      if (unsubscribe) unsubscribe();
     };
   }, [client, otherUser, currentUserId, matchId, onLastMessageUpdate]);
 
-  /* ---------- 3) Send message (Stream + Supabase log) ---------- */
-
-  async function handleSendMessage(e: React.FormEvent) {
+  /* ---------- 3) Send message ---------- */
+  async function handleSendMessage(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!newMessage.trim() || !channel || !currentUserId) return;
 
@@ -202,30 +248,40 @@ export default function StreamChatInterface({
     setNewMessage("");
 
     try {
-      const response = await channel.sendMessage({ text });
-      const createdAt = response.message.created_at || new Date().toISOString();
+      const resUnknown = await channel.sendMessage({ text });
 
-      const message: Message = {
-        id: response.message.id,
+      // Keep this minimal & safe across versions
+      const res = resUnknown as unknown as {
+        message?: {
+          id: string;
+          text?: string | null;
+          created_at?: string | Date | null;
+        };
+      };
+
+      const createdAtIso = toIso(res.message?.created_at);
+
+      const local: ChatMessage = {
+        id: res.message?.id ?? `${Date.now()}`,
         text,
         sender: "me",
-        timestamp: new Date(createdAt),
+        timestamp: new Date(createdAtIso),
         user_id: currentUserId,
       };
 
       setMessages((prev) => {
-        const exists = prev.some((m) => m.id === message.id);
-        return exists ? prev : [...prev, message];
+        if (prev.some((m) => m.id === local.id)) return prev;
+        return [...prev, local];
       });
 
-      // log for last-message in chat list
+      // optional log endpoint
       try {
         await fetch("/api/chat-log", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ matchId, content: text }),
         });
-      } catch (logErr) {
+      } catch (logErr: unknown) {
         console.error("Failed to log chat message:", logErr);
       }
 
@@ -233,11 +289,12 @@ export default function StreamChatInterface({
         onLastMessageUpdate({
           matchId,
           content: text,
-          createdAt,
+          createdAt: createdAtIso,
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error sending message:", err);
+      setError(getErrorMessage(err));
     }
   }
 
@@ -245,9 +302,6 @@ export default function StreamChatInterface({
     return date.toLocaleString([], { hour: "2-digit", minute: "2-digit" });
   }
 
-  /* ---------- render ---------- */
-
-  // if user isn’t connected yet, just show a tiny hint (no big loader)
   if (!currentUserId || !channel) {
     return (
       <div className="h-full flex items-center justify-center bg-background text-xs text-text-muted">
@@ -262,32 +316,29 @@ export default function StreamChatInterface({
       <div
         ref={messagesContainerRef}
         className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 chat-scrollbar"
-        // removed smooth scroll → instant jump
         style={{ scrollBehavior: "auto" }}
       >
-        {messages.map((message) => (
+        {messages.map((m) => (
           <div
-            key={message.id}
-            className={`flex ${
-              message.sender === "me" ? "justify-end" : "justify-start"
-            }`}
+            key={m.id}
+            className={`flex ${m.sender === "me" ? "justify-end" : "justify-start"}`}
           >
             <div
               className={[
                 "max-w-xs lg:max-w-md px-4 py-2 rounded-2xl border",
-                message.sender === "me"
+                m.sender === "me"
                   ? "bg-paprika text-white border-white/10"
                   : "bg-surface-soft text-foreground border-border",
               ].join(" ")}
             >
-              <p className="text-sm break-words">{message.text}</p>
+              <p className="text-sm break-words">{m.text}</p>
               <p
                 className={[
                   "text-xs mt-1",
-                  message.sender === "me" ? "text-white/80" : "text-text-muted",
+                  m.sender === "me" ? "text-white/80" : "text-text-muted",
                 ].join(" ")}
               >
-                {formatTime(message.timestamp)}
+                {formatTime(m.timestamp)}
               </p>
             </div>
           </div>
@@ -303,12 +354,7 @@ export default function StreamChatInterface({
             title="Scroll to bottom"
             type="button"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -326,22 +372,20 @@ export default function StreamChatInterface({
           <input
             type="text"
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setNewMessage(e.target.value)
+            }
             placeholder="Type a message..."
             className="flex-1 px-4 py-2 rounded-full border border-border bg-surface-soft text-foreground placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             disabled={!channel}
+
           />
           <button
             type="submit"
             disabled={!newMessage.trim() || !channel}
             className="px-6 py-2 rounded-full bg-primary text-primary-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -351,6 +395,7 @@ export default function StreamChatInterface({
             </svg>
           </button>
         </form>
+
         {error && (
           <p className="mt-2 text-xs text-red-400">
             {error} (chat will still try to reconnect automatically)

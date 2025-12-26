@@ -30,7 +30,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   PS5: {
     label: "PlayStation 5",
     Icon: FaPlaystation,
-    iconClassName: "text-[#2D6BFF]", // strong blue
+    iconClassName: "text-[#2D6BFF]",
     badge: "5",
     badgeClassName: "bg-[#2D6BFF]/90 text-black",
   },
@@ -38,7 +38,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   PS4: {
     label: "PlayStation 4",
     Icon: FaPlaystation,
-    iconClassName: "text-[#60A5FA]", // lighter blue
+    iconClassName: "text-[#60A5FA]",
     badge: "4",
     badgeClassName: "bg-[#60A5FA]/90 text-black",
   },
@@ -46,7 +46,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   "Xbox Series X|S": {
     label: "Xbox Series X|S",
     Icon: FaXbox,
-    iconClassName: "text-[#22C55E]", // strong green
+    iconClassName: "text-[#22C55E]",
     badgeParts: { left: "X", right: "S" },
     badgeClassName: "bg-[#22C55E]/90 text-black",
   },
@@ -54,7 +54,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   "Xbox One": {
     label: "Xbox One",
     Icon: FaXbox,
-    iconClassName: "text-[#86EFAC]", // lighter green
+    iconClassName: "text-[#86EFAC]",
     badge: "ONE",
     badgeClassName: "bg-[#86EFAC]/90 text-black",
   },
@@ -62,7 +62,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   Switch: {
     label: "Nintendo Switch",
     Icon: SiNintendoswitch,
-    iconClassName: "text-[#FB7185]", // lighter red
+    iconClassName: "text-[#FB7185]",
     badge: "1",
     badgeClassName: "bg-[#FB7185]/90 text-black",
   },
@@ -70,7 +70,7 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   "Switch 2": {
     label: "Nintendo Switch 2",
     Icon: SiNintendoswitch,
-    iconClassName: "text-[#EF4444]", // strong red
+    iconClassName: "text-[#EF4444]",
     badge: "2",
     badgeClassName: "bg-[#EF4444]/90 text-black",
   },
@@ -84,6 +84,10 @@ export const PLATFORM_ICONS: Record<PlatformKey, PlatformIconEntry> = {
   },
 };
 
+function isPlatformKey(value: string): value is PlatformKey {
+  return Object.prototype.hasOwnProperty.call(PLATFORM_ICONS, value);
+}
+
 /**
  * Makes user-entered strings match your PlatformKey reliably.
  * Also supports your admin stored values: "XBOX", "XSX/S", etc.
@@ -94,14 +98,10 @@ export function normalizePlatformKey(input: string): PlatformKey | null {
 
   const collapsed = raw.replace(/\s+/g, " ").trim();
 
-  // Keep an aggressive "normalized" version for matching weird formats:
-  // - lowercase
-  // - remove spaces
-  // - unify separators
   const lower = collapsed.toLowerCase();
   const lowerNoSpaces = lower.replace(/\s+/g, "");
   const lowerNoPunct = lowerNoSpaces.replace(/[._-]/g, "");
-  const lowerFlat = lowerNoPunct.replace(/[|/\\]/g, ""); // for x|s, x/s, xsx/s
+  const lowerFlat = lowerNoPunct.replace(/[|/\\]/g, "");
 
   // PlayStation
   if (
@@ -144,12 +144,10 @@ export function normalizePlatformKey(input: string): PlatformKey | null {
     return "PC";
 
   // Xbox One
-  // ✅ supports: "XBOX", "Xbox", "Xbox One"
   if (lower === "xbox one" || lowerNoSpaces === "xboxone") return "Xbox One";
-  if (lower === "xbox" || lowerNoSpaces === "xbox") return "Xbox One"; // your admin uses "XBOX"
+  if (lower === "xbox" || lowerNoSpaces === "xbox") return "Xbox One";
 
   // Xbox Series X|S
-  // ✅ supports: "XSX/S", "XSX", "XSS", "Series X|S", "Xbox Series", etc.
   if (lower === "xbox series x|s") return "Xbox Series X|S";
   if (lower === "xbox series x/s") return "Xbox Series X|S";
   if (lower === "xbox series xs") return "Xbox Series X|S";
@@ -160,19 +158,16 @@ export function normalizePlatformKey(input: string): PlatformKey | null {
   if (lower === "xs") return "Xbox Series X|S";
 
   // aggressive matching for stored/admin short forms
-  // "xsx/s", "xsxs", "xsx", "xss", "xboxseriesxs", "xboxseries"
-  if (lowerFlat === "xsxs") return "Xbox Series X|S";
   if (lowerFlat === "xsxs" || lowerFlat === "xsx" || lowerFlat === "xss")
     return "Xbox Series X|S";
-  if (lowerFlat === "xboxseriesxs" || lowerFlat === "xboxseriesx|s")
-    return "Xbox Series X|S";
+  if (lowerFlat === "xboxseriesxs") return "Xbox Series X|S";
   if (lowerNoSpaces === "xboxseries" || lowerNoSpaces === "xboxseriesxs")
     return "Xbox Series X|S";
   if (lowerNoSpaces === "xsx/s" || lowerNoSpaces === "xsxs")
     return "Xbox Series X|S";
 
   // If they already typed exactly like the key
-  if ((PLATFORM_ICONS as any)[collapsed]) return collapsed as PlatformKey;
+  if (isPlatformKey(collapsed)) return collapsed;
 
   return null;
 }

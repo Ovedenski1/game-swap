@@ -75,11 +75,23 @@ export type AdminPollInput = {
 type Row = Record<string, unknown>;
 
 /**
- * We only need a tiny surface of the Supabase client here (from().select().eq()...).
- * Keeping it minimal avoids pulling heavy types.
+ * Minimal (typed) Supabase surface used ONLY for ensureUniquePollSlug.
+ * No `any`, but still matches the builder chain we need.
  */
+type SupabaseQueryResult = { data: unknown[] | null; error: unknown | null };
+
+type SupabaseSlugQuery = {
+  eq: (column: string, value: string) => SupabaseSlugQuery;
+  neq: (column: string, value: string) => SupabaseSlugQuery;
+  limit: (count: number) => Promise<SupabaseQueryResult>;
+};
+
 type SupabaseLike = {
-  from: (table: string) => any; // Supabase builder chain type; safe here and DOESN'T trigger no-explicit-any unless you typed it as "any" directly in function params
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => SupabaseSlugQuery;
+    };
+  };
 };
 
 function slugify(input: string): string {
@@ -108,7 +120,9 @@ async function ensureAdmin() {
 
   if (error) throw new Error(error.message);
 
-  const isAdmin = dbUser?.is_admin || user.user_metadata?.is_admin;
+  const isAdmin = Boolean((dbUser as { is_admin?: boolean } | null)?.is_admin) ||
+    user.user_metadata?.is_admin === true;
+
   if (!isAdmin) throw new Error("NOT_ADMIN");
 
   return supabase;
@@ -124,11 +138,11 @@ async function ensureUniquePollSlug(
   let suffix = 1;
 
   while (true) {
-    let q = supabase.from("polls").select("id").eq("slug", candidate).limit(1);
+    let q = supabase.from("polls").select("id").eq("slug", candidate);
 
     if (currentId) q = q.neq("id", currentId);
 
-    const { data, error } = await q;
+    const { data, error } = await q.limit(1);
     if (error) return candidate; // fallback; DB unique constraint still protects
 
     if (!data || data.length === 0) return candidate;
@@ -180,10 +194,12 @@ export async function adminGetPollForEdit(
 
   const pollRow = poll as Row;
 
+  const pollId = String(pollRow.id ?? "");
+
   const { data: questions, error: qErr } = await supabase
     .from("poll_questions")
     .select("id, prompt, sort_order")
-    .eq("poll_id", pollRow.id as string)
+    .eq("poll_id", pollId)
     .order("sort_order", { ascending: true });
 
   if (qErr) return null;
@@ -191,13 +207,13 @@ export async function adminGetPollForEdit(
   const { data: options, error: oErr } = await supabase
     .from("poll_options")
     .select("id, question_id, label, style, image_url, sort_order")
-    .eq("poll_id", pollRow.id as string)
+    .eq("poll_id", pollId)
     .order("sort_order", { ascending: true });
 
   if (oErr) return null;
 
   return {
-    id: String(pollRow.id ?? ""),
+    id: pollId,
     slug: String(pollRow.slug ?? ""),
     title: (pollRow.title as string) ?? "",
     description: (pollRow.description as string | null) ?? null,
@@ -206,19 +222,21 @@ export async function adminGetPollForEdit(
     status: (pollRow.status as PollStatus) ?? "draft",
     starts_at: (pollRow.starts_at as string | null) ?? null,
     ends_at: (pollRow.ends_at as string | null) ?? null,
-    questions: (questions as Row[] | null | undefined)?.map((x) => ({
-      id: String(x.id ?? ""),
-      prompt: (x.prompt as string) ?? "",
-      sort_order: Number(x.sort_order ?? 0),
-    })) ?? [],
-    options: (options as Row[] | null | undefined)?.map((x) => ({
-      id: String(x.id ?? ""),
-      question_id: String(x.question_id ?? ""),
-      label: (x.label as string) ?? "",
-      style: ((x.style as "text" | "image") ?? "text"),
-      image_url: (x.image_url as string | null) ?? null,
-      sort_order: Number(x.sort_order ?? 0),
-    })) ?? [],
+    questions:
+      (questions as Row[] | null | undefined)?.map((x) => ({
+        id: String(x.id ?? ""),
+        prompt: (x.prompt as string) ?? "",
+        sort_order: Number(x.sort_order ?? 0),
+      })) ?? [],
+    options:
+      (options as Row[] | null | undefined)?.map((x) => ({
+        id: String(x.id ?? ""),
+        question_id: String(x.question_id ?? ""),
+        label: (x.label as string) ?? "",
+        style: ((x.style as "text" | "image") ?? "text"),
+        image_url: (x.image_url as string | null) ?? null,
+        sort_order: Number(x.sort_order ?? 0),
+      })) ?? [],
   };
 }
 
@@ -288,7 +306,6 @@ export async function adminCreatePoll(input: AdminPollInput) {
     if (oErr) throw new Error(oErr.message || "Failed to create options.");
   }
 
-  // ✅ refresh pages that read polls
   revalidatePath("/admin/polls");
   revalidatePath("/polls");
 
@@ -308,7 +325,6 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
     id,
   );
 
-  // update poll row
   const { error: upErr } = await supabase
     .from("polls")
     .update({
@@ -325,8 +341,6 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
 
   if (upErr) throw new Error(upErr.message);
 
-  // easiest v1: wipe old questions/options, reinsert
-  // (safe because votes reference option_id; so only do this if poll has NO votes)
   const { count } = await supabase
     .from("poll_votes")
     .select("*", { count: "exact", head: true })
@@ -370,7 +384,6 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
     if (oErr) throw new Error(oErr.message || "Failed to create options.");
   }
 
-  // ✅ refresh pages that read polls
   revalidatePath("/admin/polls");
   revalidatePath("/polls");
 
@@ -380,7 +393,6 @@ export async function adminUpdatePoll(id: string, input: AdminPollInput) {
 export async function adminDeletePoll(id: string) {
   const supabase = await ensureAdmin();
 
-  // delete in safe order
   await supabase.from("poll_votes").delete().eq("poll_id", id);
   await supabase.from("poll_options").delete().eq("poll_id", id);
   await supabase.from("poll_questions").delete().eq("poll_id", id);
@@ -388,7 +400,6 @@ export async function adminDeletePoll(id: string) {
   const { error } = await supabase.from("polls").delete().eq("id", id);
   if (error) throw new Error(error.message);
 
-  // ✅ refresh list page + public polls page
   revalidatePath("/admin/polls");
   revalidatePath("/polls");
 }
@@ -399,7 +410,6 @@ export async function adminSetPollStatus(id: string, status: PollStatus) {
   const { error } = await supabase.from("polls").update({ status }).eq("id", id);
   if (error) throw new Error(error.message);
 
-  // ✅ refresh list page + public polls page
   revalidatePath("/admin/polls");
   revalidatePath("/polls");
 
