@@ -8,7 +8,7 @@ import Image from "next/image";
 
 import { getUserChats } from "@/lib/actions/matches";
 import { useAuth } from "@/contexts/auth-context";
-import type { UserProfile } from "../profile/page";
+import type { UserProfile } from "@/components/ProfilePage";
 
 interface ChatData {
   id: string; // match id
