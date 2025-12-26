@@ -1,16 +1,20 @@
-import Link from "next/link";
+// app/admin/polls/[id]/page.tsx
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { adminGetPollForEdit } from "@/lib/actions/admin-polls";
 import AdminPollEditor from "@/components/AdminPollEditor";
 
-const outlineBtn =
-  "inline-flex items-center justify-center " +
-  "bg-transparent text-foreground border border-border/40 " +
-  "hover:border-bronze/45 hover:bg-transparent " +
-  "shadow-[0_0_0_1px_rgba(236,167,44,0)] hover:shadow-[0_0_0_1px_rgba(236,167,44,0.18)] " +
-  "focus-visible:ring-2 focus-visible:ring-bronze/45 " +
-  "rounded-full px-3 py-1.5 text-xs";
+function toDateOrNull(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
+}
 
 export default async function AdminPollEditPage({
   params,
@@ -52,9 +56,6 @@ export default async function AdminPollEditPage({
 
   return (
     <div className="max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-4 py-8">
-      {/* Top back button */}
-      
-
       <AdminPollEditor
         mode="edit"
         initial={{
@@ -65,8 +66,8 @@ export default async function AdminPollEditPage({
           hero_image_url: poll.hero_image_url ?? "",
           card_image_url: poll.card_image_url ?? "",
           status: poll.status,
-          starts_at: poll.starts_at ?? "",
-          ends_at: poll.ends_at ?? "",
+          starts_at: toDateOrNull(poll.starts_at),
+          ends_at: toDateOrNull(poll.ends_at),
           questions,
         }}
       />
